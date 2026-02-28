@@ -22,12 +22,20 @@ async function cfFetch(path, method, body) {
         body: body ? JSON.stringify(body) : undefined,
     })
 
-    return res.json()
+    const json = await res.json()
+
+    // log full error from cloudflare if it fails
+    if (!json.success && method !== 'DELETE') {
+        console.error(`  CF ERROR [${method} ${path}]:`, JSON.stringify(json.errors))
+        throw new Error(json.errors?.[0]?.message || 'Cloudflare API error')
+    }
+
+    return json
 }
 
 // records
 async function listRecords(name) {
-    const r = await cfFetch(`/zones/${CF_ZONE_ID}/dns_records?name=${name}&per_page=100`, 'GET')
+    const r = await cfFetch(`/zones/${CF_ZONE_ID}/dns_records?name=${encodeURIComponent(name)}&per_page=100`, 'GET')
     return r.result || []
 }
 async function createRecord(type, name, content, proxied = false) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_records`, 'POST', { type, name, content, proxied, ttl: 1 }) }
@@ -37,14 +45,14 @@ async function deleteRecord(id) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_recor
 // flat list {type, name, content} from domain payload
 // CNAME/MX entries can be plain strings OR {name?, value} objects
 // name is resolved to FQDN: "aitji.id" → "aitji.id.thatako.net"
+const NAME_TYPES = new Set(['CNAME', 'MX'])
 function flatRecord(records, domainName) {
     const flat = []
     for (const [type, val] of Object.entries(records)) {
         const values = Array.isArray(val) ? val : [val]
         for (const v of values) {
             if (typeof v === 'object' && v !== null) {
-                // {name?, value} — CNAME or MX from UI
-                if (!v.value) continue // skip empty rows
+                if (!v.value) continue
                 let recordName = domainName
                 if (v.name) recordName = v.name.endsWith('.thatako.net') ? v.name : `${v.name}.thatako.net`
                 flat.push({ type, name: recordName, content: v.value })
@@ -74,7 +82,9 @@ async function processChange({ action, data }) {
     const desired = flatRecord(data.records || {}, domainName)
     const existing = await listRecords(domainName)
 
-    // match by type+name+content
+    console.log(`  desired: ${desired.length} record(s), existing: ${existing.length} record(s)`)
+
+    // match by type+name
     const handled = new Set()
     for (const want of desired) {
         const match = existing.find(e => e.type === want.type && e.name === want.name && !handled.has(e.id))
@@ -104,7 +114,7 @@ async function processChange({ action, data }) {
     for (const change of changes) {
         try { await processChange(change) }
         catch (e) {
-            console.error(`Error processing ${change?.data?.domain}:`, e.message)
+            console.error(`error processing ${change?.data?.domain}:`, e.message)
             hasError = true
         }
     }
