@@ -21,14 +21,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install deps
-        run: npm ci
-
       - name: Get changed domain files
         id: diff
-        run: |
-          # Get list of changed files in domains/ between HEAD and HEAD~1
-          node util/get-changed-domains.js >> $GITHUB_OUTPUT
+        run: node util/get-changed-domains.js >> $GITHUB_OUTPUT
 
       - name: Sync changed domains to Cloudflare
         if: steps.diff.outputs.changes != ''
