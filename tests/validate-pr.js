@@ -260,8 +260,8 @@ function isOwnerBase(file, authorId, baseSha) {
     try {
         await postComment(
             `## [✅] Automated Validation Passed\n\n` +
-            `${domainFiles.length} domain file(s) validated and committed to main directly.\n` +
-            `Closing this PR — no merge needed.`
+            `${domainFiles.length} domain file(s) validated and committed to [main] directly.\n` +
+            `Closing this PR!`
         )
     } catch (e) { console.error('postComment threw:', e.message) }
 
