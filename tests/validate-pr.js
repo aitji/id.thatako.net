@@ -14,175 +14,131 @@ const {
 
 const authorId = Number(PR_AUTHOR_ID)
 
-// github utils
-async function ghPost(path, body) {
+async function gh(method, path, body) {
     const res = await fetch(`https://api.github.com${path}`, {
-        method: 'POST',
-        headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
-        body: JSON.stringify(body),
+        method,
+        headers: {
+            Authorization: `token ${GITHUB_TOKEN}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'thatako-pr-bot'
+        },
+        body: body ? JSON.stringify(body) : undefined
     })
-    return res.json()
+
+    const data = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+        console.error(`${method} ${path} failed:`, res.status, data)
+    }
+
+    return { ok: res.ok, data }
 }
 
-async function ghPatch(path, body) {
-    const res = await fetch(`https://api.github.com${path}`, {
-        method: 'PATCH',
-        headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
-        body: JSON.stringify(body),
-    })
-    return res.json()
-}
-
-async function addLabels(labels) {
-    const r = await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/labels`, { labels })
-    if (r.message) console.error('  addLabels error:', r.message)
-    else console.log('  labels applied:', labels.join(', '))
-}
-async function removeLabel(label) { await fetch(`https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/labels/${encodeURIComponent(label)}`, { method: 'DELETE', headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' }, }) }
-async function requestReview(reviewers) {
-    const r = await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers`, { reviewers })
-    if (r.message) console.error('  requestReview error:', r.message)
-    else console.log('  review requested from:', reviewers.join(', '))
-}
-async function postComment(body) { await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/comments`, { body }) }
 async function approvePR() {
-    const r = await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'APPROVE', body: 'Automated validation passed.' })
-    if (r.message) console.error('  approvePR error:', r.message)
-    else console.log('  PR approved')
-}
-async function requestChanges(body) {
-    const r = await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'REQUEST_CHANGES', body })
-    if (r.message) console.error('  requestChanges error:', r.message)
-    else console.log('  changes requested')
+    return gh('POST', `/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, {
+        event: 'APPROVE',
+        body: 'Automated validation passed.'
+    })
 }
 
-// get changed files
+async function mergePR() {
+    return gh('PUT', `/repos/${REPO}/pulls/${PR_NUMBER}/merge`, {
+        merge_method: 'squash'
+    })
+}
+
 function getChangedFiles() {
     const raw = execSync(`git diff --name-status ${BASE_SHA} ${HEAD_SHA}`, { encoding: 'utf8' })
-    const files = []
-    for (const line of raw.trim().split('\n').filter(Boolean)) {
+    return raw.trim().split('\n').filter(Boolean).map(line => {
         const [status, file] = line.split(/\s+/)
-        files.push({ status, file })
-    }
-    return files
+        return { status, file }
+    })
 }
 
-// main script
-(async () => {
-    const changedFiles = getChangedFiles()
-    const domainFiles = changedFiles.filter(f => f.file.startsWith('domains/') && f.file.endsWith('.json'))
-    const otherFiles = changedFiles.filter(f => !f.file.startsWith('domains/'))
-
-    const allLabels = []
-    const allReasons = []
-    let needsMaintainer = false
-
-    // edits outside "domains/"
-    if (otherFiles.length > 0) {
-        allLabels.push('reason: unauthorized')
-        allReasons.push(`PR modifies files outside domains/: ${otherFiles.map(f => f.file).join(', ')}`)
-        needsMaintainer = true
-    }
-
-    // each domain file
-    for (const { status, file } of domainFiles) {
-        if (status === 'D') {
-            const { isOwner } = await isOwnerBase(file, authorId, BASE_SHA)
-            if (!isOwner) {
-                allLabels.push('reason: unauthorized')
-                allReasons.push(`@${PR_AUTHOR} is not an owner of ${file} and cannot delete it`)
-                needsMaintainer = true
-            }
-            continue
-        }
-
-        // add/mod : read HEAD
-        let data
-        try { data = JSON.parse(readFileSync(file, 'utf8')) }
-        catch (e) {
-            allLabels.push('reason: invalid file')
-            allReasons.push(`${file}: could not parse JSON - ${e.message}`)
-            continue
-        }
-
-        const isOwner = Array.isArray(data.owner) && data.owner.some(o => o['github-id'] === authorId && o.github === PR_AUTHOR)
-        if (!isOwner) {
-            allLabels.push('reason: unauthorized')
-            allReasons.push(`@${PR_AUTHOR} (id:${authorId}) is not listed as an owner in ${file}`)
-            needsMaintainer = true
-            continue
-        }
-
-        // author was already an owner before this PR
-        if (status === 'M') {
-            const { isOwner: wasOwner } = await isOwnerBase(file, authorId, BASE_SHA)
-            if (!wasOwner) {
-                allLabels.push('reason: impersonation')
-                allReasons.push(`@${PR_AUTHOR} added themselves as owner in ${file} ; cannot self-authorize`)
-                needsMaintainer = true
-                continue
-            }
-        }
-
-        // check structure
-        const { errors, warnings } = validateDomainFile(data, file)
-
-        if (errors.length > 0) {
-            for (const err of errors) {
-                const match = err.match(/reason: ([\w\s:]+)/)
-                if (match) allLabels.push(match[1].trim())
-            }
-            allReasons.push(`${file}: ${errors.join('; ')}`)
-            needsMaintainer = true
-        }
-
-        if (warnings.length > 0) for (const w of warnings) allReasons.push(`⚠️ ${file}: ${w}`)
-    }
-
-    // post result
-    const uniqueLabels = [...new Set(allLabels)]
-
-    if (needsMaintainer) {
-        console.log('PR failed validation:', allReasons)
-        console.log('posting to github: labels =', uniqueLabels, 'PR_NUMBER =', PR_NUMBER, 'REPO =', REPO)
-
-        try {
-            if (uniqueLabels.length > 0) await addLabels(uniqueLabels)
-        } catch (e) { console.error('addLabels threw:', e.message) }
-
-        try {
-            await requestReview(['aitji'])
-        } catch (e) { console.error('requestReview threw:', e.message) }
-
-        try {
-            await requestChanges(
-                `## [❌] Automated PR Validation Failed\n\n` +
-                `**Labels applied:** ${uniqueLabels.map(l => `\`${l}\``).join(', ')}\n\n` +
-                `**Issues found:**\n${allReasons.map(r => `- ${r}`).join('\n')}\n\n` +
-                `This PR has been assigned to @aitji for manual review.`
-            )
-        } catch (e) { console.error('requestChanges threw:', e.message) }
-
-        process.exit(1)
-    } else {
-        try { await approvePR() } catch (e) { console.error('approvePR threw:', e.message) }
-        console.log(`PR validated successfully. ${domainFiles.length} domain file(s) OK.`)
-        process.exit(0)
-    }
-})().catch(e => {
-    console.error('validate-pr.js crashed:', e)
-    process.exit(1)
-})
-
-// utils helper
 async function isOwnerBase(file, authorId, baseSha) {
     try {
         const raw = execSync(`git show ${baseSha}:${file}`, { encoding: 'utf8' })
         const existingData = JSON.parse(raw)
-        const isOwner = Array.isArray(existingData.owner) && existingData.owner.some(o => o['github-id'] === authorId)
-        return { isOwner, existingData }
+        const isOwner = Array.isArray(existingData.owner) &&
+            existingData.owner.some(o => o['github-id'] === authorId)
+        return { isOwner }
     } catch {
-        // didn't exist in base (new file) ; that's OK
-        return { isOwner: true, existingData: null }
+        return { isOwner: true }
     }
 }
+
+(async () => {
+    const changedFiles = getChangedFiles()
+    const domainFiles = changedFiles.filter(f =>
+        f.file.startsWith('domains/') && f.file.endsWith('.json')
+    )
+    const otherFiles = changedFiles.filter(f =>
+        !f.file.startsWith('domains/')
+    )
+
+    let failed = false
+
+    if (otherFiles.length > 0) failed = true
+
+    for (const { status, file } of domainFiles) {
+        if (status === 'D') {
+            const { isOwner } = await isOwnerBase(file, authorId, BASE_SHA)
+            if (!isOwner) failed = true
+            continue
+        }
+
+        let data
+        try {
+            data = JSON.parse(readFileSync(file, 'utf8'))
+        } catch {
+            failed = true
+            continue
+        }
+
+        const isOwner = Array.isArray(data.owner) &&
+            data.owner.some(o =>
+                o['github-id'] === authorId && o.github === PR_AUTHOR
+            )
+
+        if (!isOwner) {
+            failed = true
+            continue
+        }
+
+        if (status === 'M') {
+            const { isOwner: wasOwner } = await isOwnerBase(file, authorId, BASE_SHA)
+            if (!wasOwner) {
+                failed = true
+                continue
+            }
+        }
+
+        const { errors } = validateDomainFile(data, file)
+        if (errors.length > 0) failed = true
+    }
+
+    if (failed) {
+        console.log('PR failed validation')
+        process.exit(1)
+    }
+
+    console.log('Validation passed')
+
+    // approve (may fail if same author)
+    await approvePR()
+
+    // merge
+    const merge = await mergePR()
+    if (!merge.ok) {
+        console.error('Merge failed')
+        process.exit(1)
+    }
+
+    console.log('PR merged successfully')
+    process.exit(0)
+
+})().catch(e => {
+    console.error('validate-pr.js crashed:', e)
+    process.exit(1)
+})
