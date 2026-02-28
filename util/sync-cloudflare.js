@@ -44,8 +44,6 @@ async function deleteRecord(id) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_recor
 
 // flat list {type, name, content} from domain payload
 // CNAME/MX entries can be plain strings OR {name?, value} objects
-// name is resolved to FQDN: "aitji.id" → "aitji.id.thatako.net"
-const NAME_TYPES = new Set(['CNAME', 'MX'])
 function flatRecord(records, domainName) {
     const flat = []
     for (const [type, val] of Object.entries(records)) {
@@ -54,7 +52,11 @@ function flatRecord(records, domainName) {
             if (typeof v === 'object' && v !== null) {
                 if (!v.value) continue
                 let recordName = domainName
-                if (v.name) recordName = v.name.endsWith('.thatako.net') ? v.name : `${v.name}.thatako.net`
+                if (v.name) {
+                    recordName = v.name.includes('.') && v.name.endsWith('thatako.net')
+                        ? v.name
+                        : `${v.name}.thatako.net`
+                }
                 flat.push({ type, name: recordName, content: v.value })
             } else {
                 if (!v) continue
@@ -63,6 +65,21 @@ function flatRecord(records, domainName) {
         }
     }
     return flat
+}
+
+function checkConflicts(desired) {
+    const byName = {}
+    for (const r of desired) {
+        if (!byName[r.name]) byName[r.name] = []
+        byName[r.name].push(r.type)
+    }
+    for (const [name, types] of Object.entries(byName)) {
+        const hasCNAME = types.includes('CNAME')
+        const hasA = types.includes('A') || types.includes('AAAA')
+        if (hasCNAME && hasA) {
+            throw new Error(`conflict: cannot have both A/AAAA and CNAME on the same name "${name}". Remove one from the domain file.`)
+        }
+    }
 }
 
 async function processChange({ action, data }) {
@@ -80,7 +97,17 @@ async function processChange({ action, data }) {
     }
 
     const desired = flatRecord(data.records || {}, domainName)
-    const existing = await listRecords(domainName)
+
+    // catch conflicts before touching cloudflare
+    checkConflicts(desired)
+
+    // list all relevant record names to check (domainName + any custom names from CNAME/MX)
+    const namesToCheck = [...new Set(desired.map(r => r.name))]
+    const existing = []
+    for (const n of namesToCheck) {
+        const recs = await listRecords(n)
+        existing.push(...recs)
+    }
 
     console.log(`  desired: ${desired.length} record(s), existing: ${existing.length} record(s)`)
 
@@ -100,7 +127,7 @@ async function processChange({ action, data }) {
         }
     }
 
-    // del reocrds
+    // del records no longer in file
     for (const ex of existing) {
         if (!handled.has(ex.id)) {
             console.log(`  REMOVE ${ex.type} ${ex.name} ${ex.content} (no longer in file)`)
