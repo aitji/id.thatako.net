@@ -143,18 +143,29 @@ function getChangedFiles() {
     const uniqueLabels = [...new Set(allLabels)]
 
     if (needsMaintainer) {
-        if (uniqueLabels.length > 0) await addLabels(uniqueLabels)
-        await requestReview(['aitji'])
-        await requestChanges(
-            `## [❌] Automated PR Validation Failed\n\n` +
-            `**Labels applied:** ${uniqueLabels.map(l => `\`${l}\``).join(', ')}\n\n` +
-            `**Issues found:**\n${allReasons.map(r => `- ${r}`).join('\n')}\n\n` +
-            `This PR has been assigned to @aitji for manual review.`
-        )
         console.log('PR failed validation:', allReasons)
-        process.exit(1) // fail the check so PR cannot be merged
+        console.log('posting to github: labels =', uniqueLabels, 'PR_NUMBER =', PR_NUMBER, 'REPO =', REPO)
+
+        try {
+            if (uniqueLabels.length > 0) await addLabels(uniqueLabels)
+        } catch (e) { console.error('addLabels threw:', e.message) }
+
+        try {
+            await requestReview(['aitji'])
+        } catch (e) { console.error('requestReview threw:', e.message) }
+
+        try {
+            await requestChanges(
+                `## [❌] Automated PR Validation Failed\n\n` +
+                `**Labels applied:** ${uniqueLabels.map(l => `\`${l}\``).join(', ')}\n\n` +
+                `**Issues found:**\n${allReasons.map(r => `- ${r}`).join('\n')}\n\n` +
+                `This PR has been assigned to @aitji for manual review.`
+            )
+        } catch (e) { console.error('requestChanges threw:', e.message) }
+
+        process.exit(1)
     } else {
-        await approvePR()
+        try { await approvePR() } catch (e) { console.error('approvePR threw:', e.message) }
         console.log(`PR validated successfully. ${domainFiles.length} domain file(s) OK.`)
         process.exit(0)
     }
