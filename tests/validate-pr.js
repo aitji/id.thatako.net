@@ -33,12 +33,28 @@ async function ghPatch(path, body) {
     return res.json()
 }
 
-async function addLabels(labels) { await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/labels`, { labels }) }
+async function addLabels(labels) {
+    const r = await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/labels`, { labels })
+    if (r.message) console.error('  addLabels error:', r.message)
+    else console.log('  labels applied:', labels.join(', '))
+}
 async function removeLabel(label) { await fetch(`https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/labels/${encodeURIComponent(label)}`, { method: 'DELETE', headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' }, }) }
-async function requestReview(reviewers) { await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers`, { reviewers }) }
+async function requestReview(reviewers) {
+    const r = await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers`, { reviewers })
+    if (r.message) console.error('  requestReview error:', r.message)
+    else console.log('  review requested from:', reviewers.join(', '))
+}
 async function postComment(body) { await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/comments`, { body }) }
-async function approvePR() { await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'APPROVE', body: 'Automated validation passed.' }) }
-async function requestChanges(body) { await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'REQUEST_CHANGES', body }) }
+async function approvePR() {
+    const r = await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'APPROVE', body: 'Automated validation passed.' })
+    if (r.message) console.error('  approvePR error:', r.message)
+    else console.log('  PR approved')
+}
+async function requestChanges(body) {
+    const r = await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'REQUEST_CHANGES', body })
+    if (r.message) console.error('  requestChanges error:', r.message)
+    else console.log('  changes requested')
+}
 
 // get changed files
 function getChangedFiles() {
