@@ -1,0 +1,20 @@
+{
+  "domain": "pickerth-12.id.thatako.net",
+  "host": [
+    "vercel"
+  ],
+  "owner": [
+    {
+      "github": "pickerth-12",
+      "github-id": 131840709
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "juap.id",
+        "value": "0a8082110cc04770.vercel-dns-017.com."
+      }
+    ]
+  }
+}
