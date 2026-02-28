@@ -1,0 +1,15 @@
+[
+    "www", "mail", "ftp", "smtp", "pop", "imap", "pop3",
+    "admin", "administrator", "root", "superuser",
+    "api", "dashboard", "control", "panel", "cpanel",
+    "help", "support", "billing", "abuse",
+    "blog", "news", "shop", "store",
+    "status", "uptime", "monitor",
+    "cdn", "static", "assets", "img", "images", "media", "files",
+    "ns", "ns1", "ns2", "dns", "resolver",
+    "id", "auth", "oauth", "sso", "login", "register",
+    "vpn", "proxy", "gateway", "docs",
+    "dev", "staging", "test", "beta", "alpha",
+    "localhost", "internal", "local",
+    "thatako", "worker", "workers", "go"
+]

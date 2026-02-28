@@ -1,0 +1,9 @@
+{
+    "_comment": ".id.thatako.net ; that are reserved for internal use",
+    "reserved": [
+        "admin",
+        "test",
+        "demo",
+        "example"
+    ]
+}

@@ -1,0 +1,16 @@
+{
+    "name": "id.thatako.net",
+    "version": "1.0.0",
+    "description": "subdomain registry for id.thatako.net",
+    "type": "module",
+    "scripts": {
+        "test": "node --test tests/*.test.js",
+        "test:records": "node --test tests/records.test.js",
+        "test:domains": "node --test tests/domains.test.js",
+        "validate-pr": "node tests/validate-pr.js",
+        "sync-dns": "node util/sync-cloudflare.js"
+    },
+    "engines": {
+        "node": ">=18"
+    }
+}
