@@ -69,15 +69,20 @@ export function validateDomainFile(data, filename) {
 
       const values = Array.isArray(val) ? val : [val]
       for (const v of values) {
-        if (typeof v !== 'string') { errors.push(`reason: invalid records - ${type} value must be a string`); continue; }
-        if (DANGEROUS_RE.test(v)) { errors.push(`reason: invalid records - dangerous content in ${type} record`); continue; }
+        // v can be a plain string OR {name?, value} object (CNAME, MX from UI)
+        const content = (typeof v === 'object' && v !== null) ? v.value : v
+        const recName = (typeof v === 'object' && v !== null) ? (v.name || '') : ''
 
-        if (type === 'A' && !IPV4_RE.test(v)) errors.push(`reason: invalid records - A record must be IPv4: ${v}`)
-        if (type === 'AAAA' && !IPV6_RE.test(v)) errors.push(`reason: invalid records - AAAA record must be IPv6: ${v}`)
-        if ((type === 'CNAME' || type === 'MX') && !HOSTNAME_RE.test(v)) errors.push(`reason: invalid records - ${type} must be a valid hostname: ${v}`)
+        if (typeof content !== 'string') { errors.push(`reason: invalid records - ${type} value must be a string`); continue }
+        if (DANGEROUS_RE.test(content)) { errors.push(`reason: invalid records - dangerous content in ${type} record`); continue }
+        if (recName && DANGEROUS_RE.test(recName)) { errors.push(`reason: invalid records - dangerous content in ${type} record name`); continue }
+
+        if (type === 'A' && !IPV4_RE.test(content)) errors.push(`reason: invalid records - A record must be IPv4: ${content}`)
+        if (type === 'AAAA' && !IPV6_RE.test(content)) errors.push(`reason: invalid records - AAAA record must be IPv6: ${content}`)
+        if ((type === 'CNAME' || type === 'MX') && content && !HOSTNAME_RE.test(content)) errors.push(`reason: invalid records - ${type} must be a valid hostname: ${content}`)
 
         // disallowed CNAME list
-        if (type === 'CNAME' && DISALLOWED.some(d => v.includes(d + '.thatako.net'))) warnings.push(`CNAME target ${v} points to internal thatako.net - is this intentional?`);
+        if (type === 'CNAME' && DISALLOWED.some(d => content.includes(d + '.thatako.net'))) warnings.push(`CNAME target ${content} points to internal thatako.net - is this intentional?`)
       }
     }
 

@@ -34,12 +34,25 @@ async function createRecord(type, name, content, proxied = false) { return cfFet
 async function updateRecord(id, type, name, content) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_records/${id}`, 'PATCH', { type, name, content, ttl: 1 }) }
 async function deleteRecord(id) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_records/${id}`, 'DELETE') }
 
-// flat list {type, content} ; domain payload
-function flatRecord(records) {
+// flat list {type, name, content} from domain payload
+// CNAME/MX entries can be plain strings OR {name?, value} objects
+// name is resolved to FQDN: "aitji.id" → "aitji.id.thatako.net"
+function flatRecord(records, domainName) {
     const flat = []
     for (const [type, val] of Object.entries(records)) {
-        if (Array.isArray(val)) for (const v of val) flat.push({ type, content: v })
-        else flat.push({ type, content: val })
+        const values = Array.isArray(val) ? val : [val]
+        for (const v of values) {
+            if (typeof v === 'object' && v !== null) {
+                // {name?, value} — CNAME or MX from UI
+                if (!v.value) continue // skip empty rows
+                let recordName = domainName
+                if (v.name) recordName = v.name.endsWith('.thatako.net') ? v.name : `${v.name}.thatako.net`
+                flat.push({ type, name: recordName, content: v.value })
+            } else {
+                if (!v) continue
+                flat.push({ type, name: domainName, content: v })
+            }
+        }
     }
     return flat
 }
@@ -58,29 +71,29 @@ async function processChange({ action, data }) {
         return
     }
 
-    const desired = flatRecord(data.records || {})
+    const desired = flatRecord(data.records || {}, domainName)
     const existing = await listRecords(domainName)
 
-    // match by type+content
+    // match by type+name+content
     const handled = new Set()
     for (const want of desired) {
-        const match = existing.find(e => e.type === want.type && !handled.has(e.id))
+        const match = existing.find(e => e.type === want.type && e.name === want.name && !handled.has(e.id))
         if (match) {
             if (match.content !== want.content) {
-                console.log(`  UPDATE ${want.type} → ${want.content}`)
-                await updateRecord(match.id, want.type, domainName, want.content)
-            } else console.log(`  OK     ${want.type} ${want.content}`)
+                console.log(`  UPDATE ${want.type} ${want.name} → ${want.content}`)
+                await updateRecord(match.id, want.type, want.name, want.content)
+            } else console.log(`  OK     ${want.type} ${want.name} ${want.content}`)
             handled.add(match.id)
         } else {
-            console.log(`  CREATE ${want.type} → ${want.content}`)
-            await createRecord(want.type, domainName, want.content)
+            console.log(`  CREATE ${want.type} ${want.name} → ${want.content}`)
+            await createRecord(want.type, want.name, want.content)
         }
     }
 
     // del reocrds
     for (const ex of existing) {
         if (!handled.has(ex.id)) {
-            console.log(`  REMOVE ${ex.type} ${ex.content} (no longer in file)`)
+            console.log(`  REMOVE ${ex.type} ${ex.name} ${ex.content} (no longer in file)`)
             await deleteRecord(ex.id)
         }
     }
