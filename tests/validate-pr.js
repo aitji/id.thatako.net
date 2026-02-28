@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'fs'
 import { validateDomainFile } from '../util/validate-domain.js'
 
 const {
-    _TOKEN,
+    GITHUB_TOKEN,
     PR_AUTHOR,
     PR_AUTHOR_ID,
     BASE_SHA,
@@ -18,7 +18,7 @@ const authorId = Number(PR_AUTHOR_ID)
 async function ghPost(path, body) {
     const res = await fetch(`https://api.github.com${path}`, {
         method: 'POST',
-        headers: { Authorization: `token ${_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
+        headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
         body: JSON.stringify(body),
     })
     return res.json()
@@ -27,14 +27,14 @@ async function ghPost(path, body) {
 async function ghPatch(path, body) {
     const res = await fetch(`https://api.github.com${path}`, {
         method: 'PATCH',
-        headers: { Authorization: `token ${_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
+        headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
         body: JSON.stringify(body),
     })
     return res.json()
 }
 
 async function addLabels(labels) { await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/labels`, { labels }) }
-async function removeLabel(label) { await fetch(`https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/labels/${encodeURIComponent(label)}`, { method: 'DELETE', headers: { Authorization: `token ${_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' }, }) }
+async function removeLabel(label) { await fetch(`https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/labels/${encodeURIComponent(label)}`, { method: 'DELETE', headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' }, }) }
 async function requestReview(reviewers) { await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers`, { reviewers }) }
 async function postComment(body) { await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/comments`, { body }) }
 async function approvePR() { await ghPost(`/repos/${REPO}/pulls/${PR_NUMBER}/reviews`, { event: 'APPROVE', body: 'Automated validation passed.' }) }
@@ -48,12 +48,8 @@ function getChangedFiles() {
         const [status, file] = line.split(/\s+/)
         files.push({ status, file })
     }
-
     return files
 }
-
-
-
 
 // main script
 (async () => {
@@ -64,27 +60,23 @@ function getChangedFiles() {
     const allLabels = []
     const allReasons = []
     let needsMaintainer = false
-    let autoFixable = false
 
-    // edits outside "domain/"
+    // edits outside "domains/"
     if (otherFiles.length > 0) {
-        const nonDomainFiles = otherFiles.map(f => f.file);
         allLabels.push('reason: unauthorized')
-        allReasons.push(`PR modifies files outside domains/: ${nonDomainFiles.join(', ')}`)
+        allReasons.push(`PR modifies files outside domains/: ${otherFiles.map(f => f.file).join(', ')}`)
         needsMaintainer = true
     }
 
-    // each domain files
+    // each domain file
     for (const { status, file } of domainFiles) {
         if (status === 'D') {
-            // (D) check author is owner
-            const { isOwner, existingData } = await isOwnerBase(file, authorId, BASE_SHA)
+            const { isOwner } = await isOwnerBase(file, authorId, BASE_SHA)
             if (!isOwner) {
                 allLabels.push('reason: unauthorized')
                 allReasons.push(`@${PR_AUTHOR} is not an owner of ${file} and cannot delete it`)
                 needsMaintainer = true
             }
-
             continue
         }
 
@@ -99,13 +91,13 @@ function getChangedFiles() {
 
         const isOwner = Array.isArray(data.owner) && data.owner.some(o => o['github-id'] === authorId && o.github === PR_AUTHOR)
         if (!isOwner) {
-            allLabels.push('reason: unauthorized');
+            allLabels.push('reason: unauthorized')
             allReasons.push(`@${PR_AUTHOR} (id:${authorId}) is not listed as an owner in ${file}`)
             needsMaintainer = true
             continue
         }
 
-        // author was alr an owner before this PR
+        // author was already an owner before this PR
         if (status === 'M') {
             const { isOwner: wasOwner } = await isOwnerBase(file, authorId, BASE_SHA)
             if (!wasOwner) {
@@ -116,17 +108,14 @@ function getChangedFiles() {
             }
         }
 
-
         // check structure
         const { errors, warnings } = validateDomainFile(data, file)
 
         if (errors.length > 0) {
-            // tag specific error
             for (const err of errors) {
                 const match = err.match(/reason: ([\w\s:]+)/)
                 if (match) allLabels.push(match[1].trim())
             }
-
             allReasons.push(`${file}: ${errors.join('; ')}`)
             needsMaintainer = true
         }
@@ -134,10 +123,10 @@ function getChangedFiles() {
         if (warnings.length > 0) for (const w of warnings) allReasons.push(`⚠️ ${file}: ${w}`)
     }
 
-    // post res
+    // post result
     const uniqueLabels = [...new Set(allLabels)]
+
     if (needsMaintainer) {
-        // apply label
         if (uniqueLabels.length > 0) await addLabels(uniqueLabels)
         await requestReview(['aitji'])
         await requestChanges(
@@ -146,16 +135,11 @@ function getChangedFiles() {
             `**Issues found:**\n${allReasons.map(r => `- ${r}`).join('\n')}\n\n` +
             `This PR has been assigned to @aitji for manual review.`
         )
-
         console.log('PR failed validation:', allReasons)
-
-        // signal to workflow
-        console.log('auto_fix=false')
-        process.exit(0)
+        process.exit(1) // fail the check so PR cannot be merged
     } else {
-        await approvePR();
+        await approvePR()
         console.log(`PR validated successfully. ${domainFiles.length} domain file(s) OK.`)
-        console.log('auto_fix=false')
         process.exit(0)
     }
 })().catch(e => {
@@ -163,15 +147,15 @@ function getChangedFiles() {
     process.exit(1)
 })
 
-// utlis's helper
+// utils helper
 async function isOwnerBase(file, authorId, baseSha) {
     try {
-        const raw = execSync(`git show ${baseSha}:${file}`, { encoding: 'utf8' });
-        const existingData = JSON.parse(raw);
+        const raw = execSync(`git show ${baseSha}:${file}`, { encoding: 'utf8' })
+        const existingData = JSON.parse(raw)
         const isOwner = Array.isArray(existingData.owner) && existingData.owner.some(o => o['github-id'] === authorId)
         return { isOwner, existingData }
     } catch {
         // didn't exist in base (new file) ; that's OK
-        return { isOwner: true, existingData: null };
+        return { isOwner: true, existingData: null }
     }
 }
