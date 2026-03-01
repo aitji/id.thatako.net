@@ -1,0 +1,21 @@
+{
+  "domain": "www.id.thatako.net",
+  "host": [
+    "vercel"
+  ],
+  "owner": [
+    {
+      "github": "aitji",
+      "github-id": 100911929,
+      "email": "ait.suriya@gmail.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "www.id",
+        "value": "0a8082110cc04770.vercel-dns-017.com."
+      }
+    ]
+  }
+}
