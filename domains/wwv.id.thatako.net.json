@@ -1,0 +1,21 @@
+{
+  "domain": "wwv.id.thatako.net",
+  "host": [
+    "github-pages"
+  ],
+  "owner": [
+    {
+      "github": "pickerth-12",
+      "github-id": 131840709,
+      "email": "joiceradarjoice@gmail.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "pickerth-12.github.io"
+      }
+    ]
+  }
+}
