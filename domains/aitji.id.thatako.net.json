@@ -1,13 +1,13 @@
 {
   "domain": "aitji.id.thatako.net",
   "host": [
-    "cloudflare"
+    "vercel"
   ],
   "owner": [
     {
       "github": "aitji",
       "github-id": 100911929,
-      "email": "aitji@duck.com"
+      "email": "ait.suriya@gmail.com"
     },
     {
       "github": "PickerTH-12",
@@ -18,7 +18,7 @@
   "records": {
     "CNAME": [
       {
-        "name": "aitji.ida",
+        "name": "aitji.id",
         "value": "0a8082110cc04770.vercel-dns-017.com."
       }
     ]
