@@ -10,12 +10,5 @@
       "email": "ait.suriya@gmail.com"
     }
   ],
-  "records": {
-    "CNAME": [
-      {
-        "name": "www.id",
-        "value": "0a8082110cc04770.vercel-dns-017.com."
-      }
-    ]
-  }
+  "records": { }
 }
