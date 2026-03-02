@@ -1,13 +1,14 @@
 import { execSync } from 'child_process'
 import { readFileSync, existsSync } from 'fs'
 
-// file changed HEAD~1 & HEAD
 const raw = execSync('git diff --name-status HEAD~1 HEAD -- domains/', { encoding: 'utf8' })
+// only accept exactly domains/[sub].id.thatako.net.json - no path traversal
+const VALID_FILE_RE = /^domains\/[a-z0-9][a-z0-9\-]{0,61}[a-z0-9]?\.id\.thatako\.net\.json$/
 
 const changes = []
 for (const line of raw.trim().split('\n').filter(Boolean)) {
   const [status, file] = line.split(/\s+/)
-  if (!file || !file.startsWith('domains/') || !file.endsWith('.json')) continue
+  if (!file || !VALID_FILE_RE.test(file)) continue
 
   let action
   if (status === 'A') action = 'create'
@@ -19,7 +20,7 @@ for (const line of raw.trim().split('\n').filter(Boolean)) {
   if (action !== 'delete' && existsSync(file)) {
     try { data = JSON.parse(readFileSync(file, 'utf8')) }
     catch {
-      console.error(`Skipping malformed JSON: ${file}`)
+      console.error(`skip malformed json: ${file}`)
       continue
     }
   } else if (action === 'delete') {

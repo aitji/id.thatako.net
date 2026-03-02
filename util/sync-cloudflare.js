@@ -1,14 +1,15 @@
 const CF_BASE = 'https://api.cloudflare.com/client/v4'
-const { CF_API_TOKEN, CF_ZONE_ID } = process.env
+const ALLOWED_ZONE = '.id.thatako.net'
+const { CF_API_TOKEN, CF_ZONE_ID, CF_CHANGES } = process.env
 
 if (!CF_API_TOKEN || !CF_ZONE_ID) {
     console.error('missing CF_API_TOKEN/CF_ZONE_ID')
     process.exit(1)
 }
 
-const changes = JSON.parse(process.argv[2] || '[]')
+const changes = JSON.parse(CF_CHANGES || '[]')
 if (changes.length === 0) {
-    console.log('nothing changes')
+    console.log('nothing to sync')
     process.exit(0)
 }
 
@@ -21,16 +22,12 @@ async function cfFetch(path, method, body) {
         },
         body: body ? JSON.stringify(body) : undefined,
     })
-
-    const json = await res.json()
-
-    // log full error from cloudflare if it fails
-    if (!json.success && method !== 'DELETE') {
-        console.error(`  CF ERROR [${method} ${path}]:`, JSON.stringify(json.errors))
-        throw new Error(json.errors?.[0]?.message || 'Cloudflare API error')
+    const data = await res.json()
+    if (!data.success && method !== 'DELETE') {
+        console.error(`cf error [${method} ${path}]:`, JSON.stringify(data.errors))
+        throw new Error(data.errors?.[0]?.message || 'cloudflare api error')
     }
-
-    return json
+    return data
 }
 
 // records
@@ -38,29 +35,45 @@ async function listRecords(name) {
     const r = await cfFetch(`/zones/${CF_ZONE_ID}/dns_records?name=${encodeURIComponent(name)}&per_page=100`, 'GET')
     return r.result || []
 }
-async function createRecord(type, name, content, proxied = false) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_records`, 'POST', { type, name, content, proxied, ttl: 1 }) }
-async function updateRecord(id, type, name, content) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_records/${id}`, 'PATCH', { type, name, content, ttl: 1 }) }
-async function deleteRecord(id) { return cfFetch(`/zones/${CF_ZONE_ID}/dns_records/${id}`, 'DELETE') }
+async function createRecord(type, name, content, proxied = false) {
+    return cfFetch(`/zones/${CF_ZONE_ID}/dns_records`, 'POST', { type, name, content, proxied, ttl: 1 })
+}
+async function updateRecord(id, type, name, content) {
+    return cfFetch(`/zones/${CF_ZONE_ID}/dns_records/${id}`, 'PATCH', { type, name, content, ttl: 1 })
+}
+async function deleteRecord(id) {
+    return cfFetch(`/zones/${CF_ZONE_ID}/dns_records/${id}`, 'DELETE')
+}
 
-// flat list {type, name, content} from domain payload
-// CNAME/MX entries can be plain strings OR {name?, value} objects
+
+// record FQDN under the reg domain
+// only allows @ (root)
+function resolveRecordName(rawName, domainFqdn) {
+    if (!rawName || rawName === '@') return domainFqdn
+    if (rawName.includes('.')) throw new Error(`record name "${rawName}" contains dots, zone escape blocked`)
+
+    const resolved = `${rawName}.${domainFqdn}`
+    if (!resolved.endsWith(ALLOWED_ZONE) && !resolved.endsWith(ALLOWED_ZONE + '.')) throw new Error(`resolved record name "${resolved}" outside allowed zone`)
+
+    return resolved
+}
+
+// flat list of {type, name, content} from domain payload
 function flatRecord(records, domainName) {
+    const domain = domainName.replace(/\.$/, '')
+    if (!domain.endsWith(ALLOWED_ZONE)) throw new Error(`domain "${domain}" not in allowed zone ${ALLOWED_ZONE}`)
+
     const flat = []
     for (const [type, val] of Object.entries(records)) {
         const values = Array.isArray(val) ? val : [val]
         for (const v of values) {
             if (typeof v === 'object' && v !== null) {
                 if (!v.value) continue
-                let recordName = domainName
-                if (v.name) {
-                    recordName = v.name.includes('.') && v.name.endsWith('thatako.net')
-                        ? v.name
-                        : `${v.name}.thatako.net`
-                }
+                const recordName = resolveRecordName(v.name || '@', domain)
                 flat.push({ type, name: recordName, content: v.value })
             } else {
                 if (!v) continue
-                flat.push({ type, name: domainName, content: v })
+                flat.push({ type, name: domain, content: v })
             }
         }
     }
@@ -77,7 +90,7 @@ function checkConflicts(desired) {
         const hasCNAME = types.includes('CNAME')
         const hasA = types.includes('A') || types.includes('AAAA')
         if (hasCNAME && hasA) {
-            throw new Error(`conflict: cannot have both A/AAAA and CNAME on the same name "${name}". Remove one from the domain file.`)
+            throw new Error(`conflict: CNAME + A/AAAA on "${name}" - remove one`)
         }
     }
 }
@@ -87,29 +100,30 @@ async function processChange({ action, data }) {
     const domainName = data.domain
     console.log(`\n-- ${action.toUpperCase()} ${domainName}`)
 
+    // domain-level zone check before touching cf
+    if (!domainName.endsWith(ALLOWED_ZONE)) throw new Error(`domain "${domainName}" outside allowed zone - skipped`)
+
     if (action === 'delete') {
         const existing = await listRecords(domainName)
         for (const r of existing) {
-            console.log(`  DELETE ${r.type} ${r.name} : ${r.content}`)
+            console.log(`  delete ${r.type} ${r.name} : ${r.content}`)
             await deleteRecord(r.id)
         }
         return
     }
 
     const desired = flatRecord(data.records || {}, domainName)
-
-    // catch conflicts before touching cloudflare
     checkConflicts(desired)
 
-    // list all relevant record names to check (domainName + any custom names from CNAME/MX)
     const namesToCheck = [...new Set(desired.map(r => r.name))]
     const existing = []
     for (const n of namesToCheck) {
-        const recs = await listRecords(n)
-        existing.push(...recs)
+        // extra guard: each name query must stay in zone
+        if (!n.endsWith(ALLOWED_ZONE) && !n.endsWith(ALLOWED_ZONE + '.')) throw new Error(`record name "${n}" outside allowed zone - abort`)
+        existing.push(...await listRecords(n))
     }
 
-    console.log(`  desired: ${desired.length} record(s), existing: ${existing.length} record(s)`)
+    console.log(`  desired: ${desired.length} | existing: ${existing.length}`)
 
     // match by type+name
     const handled = new Set()
@@ -141,7 +155,7 @@ async function processChange({ action, data }) {
     for (const change of changes) {
         try { await processChange(change) }
         catch (e) {
-            console.error(`error processing ${change?.data?.domain}:`, e.message)
+            console.error(`error: ${change?.data?.domain}:`, e.message)
             hasError = true
         }
     }
