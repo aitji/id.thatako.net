@@ -1,9 +1,12 @@
 {
     "_comment": ".id.thatako.net ; that are reserved for internal use",
     "reserved": [
-        "admin",
-        "test",
-        "demo",
-        "example"
+        "admin", "test", "demo","example",
+        "council", "pr", "go", "api",
+        "status", "www", "mail", "ftp",
+        "root", "dev", "staging", "beta",
+        "help", "docs", "support", "abuse",
+        "tos","static", "cdn", "assets",
+        "img", "media", "ns", "dns"
     ]
 }
