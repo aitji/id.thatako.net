@@ -77,7 +77,7 @@ id.thatako.net/
 
 > ตัวอย่างไฟล์จาก `domains/aitji.id.thatako.net`
 
-```json
+```jsonc
 {
   "domain": "aitji.id.thatako.net",
   "host": ["vercel"],
@@ -125,7 +125,7 @@ id.thatako.net/
 
 ### ตัวอย่าง CNAME (GitHub Pages)
 
-```json
+```jsonc
 {
   "domain": "myname.id.thatako.net",
   "host": ["github-pages"],
@@ -151,7 +151,7 @@ id.thatako.net/
 
 ### ตัวอย่าง A + TXT (Cloudflare/Custom Server)
 
-```json
+```jsonc
 {
   "domain": "myname.id.thatako.net",
   "host": ["cloudflare"],
@@ -185,7 +185,7 @@ id.thatako.net/
 
 ### ตัวอย่าง AAAA (IPv6)
 
-```json
+```jsonc
 {
   // ...ข้อมูลก่อนหน้า
   "records": {
@@ -204,7 +204,7 @@ id.thatako.net/
 
 ### ตัวอย่าง MX (email)
 
-```json
+```jsonc
 {
   // ...ข้อมูลก่อนหน้า
   "records": {
@@ -225,7 +225,7 @@ id.thatako.net/
 
 สามารถใส่หลาย records ในชื่อเดียวกันได้ โดยเพิ่ม object เข้าไปใน array
 
-```json
+```jsonc
 {
   // ...ข้อมูลก่อนหน้า
   "records": {
@@ -253,7 +253,7 @@ id.thatako.net/
 > CNAME **ไม่สามารถ**อยู่ร่วมกับ ``A``, ``AAAA`` หรือ ``MX`` บนชื่อ (name) เดียวกันได้
 > ตามมาตรฐาน RFC 1912, GitHub Actions จะ fail validation ทันที
 
-```json
+```jsonc
 // [ผิด ❌] CNAME และ A บน "@" เดียวกัน
 {
   "records": {
