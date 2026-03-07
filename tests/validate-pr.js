@@ -106,7 +106,7 @@ function isOwnerBase(file, authorId, baseSha) {
     try {
         const raw = execSync(`git show ${baseSha}:${file}`, { encoding: 'utf8' })
         const data = JSON.parse(raw)
-        const isOwner = Array.isArray(data.owner) && data.owner.some(o => o['github-id'] === authorId)
+        const isOwner = Array.isArray(data.owner) && data.owner.some(o => Number(o['github-id']) === authorId)
         return { isOwner, existingData: data }
     } catch {
         return { isOwner: true, existingData: null } // new file - ok
@@ -150,7 +150,7 @@ function isOwnerBase(file, authorId, baseSha) {
             continue
         }
 
-        const isOwner = Array.isArray(data.owner) && data.owner.some(o => o['github-id'] === authorId && o.github === PR_AUTHOR)
+        const isOwner = Array.isArray(data.owner) && data.owner.some(o => Number(o['github-id']) === authorId && o.github === PR_AUTHOR)
         if (!isOwner) {
             allLabels.push('reason: unauthorized')
             allReasons.push(`@${PR_AUTHOR} (id:${authorId}) not listed as owner in ${file}`)
