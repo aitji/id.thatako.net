@@ -97,8 +97,26 @@ async function commitFileToMain(path, content, message, existingSha) {
 function getChangedFiles() {
     const raw = execSync(`git diff --name-status ${BASE_SHA} ${HEAD_SHA}`, { encoding: 'utf8' })
     return raw.trim().split('\n').filter(Boolean).map(line => {
-        const [status, file] = line.split(/\s+/)
-        return { status, file }
+        const parts = line.split(/\s+/)
+        const statusRaw = parts[0]
+
+        // (Rename) treat as A
+        if (statusRaw.startsWith('R')) return {
+            status: 'A',
+            file: parts[2],
+            oldFile: parts[1],
+            renamed: true
+        }
+
+        // (Copy) treat as A
+        if (statusRaw.startsWith('C')) return {
+            status: 'A',
+            file: parts[2],
+            oldFile: parts[1],
+            copied: true
+        }
+
+        return { status: statusRaw, file: parts[1] }
     })
 }
 
@@ -111,6 +129,24 @@ function isOwnerBase(file, authorId, baseSha) {
     } catch {
         return { isOwner: true, existingData: null } // new file - ok
     }
+}
+
+// hint for common file-mistakes
+function getFilenameHint(file) {
+    const hints = []
+
+    if (!file.endsWith('.json'))
+        hints.push(`missing \`.json\` extension, it should be end with \`.json\``)
+    if (!file.startsWith('domains/'))
+        hints.push(`file must be inside the \`domains/\` folder`)
+    if (!file.includes('.id.thatako.net'))
+        hints.push(`domain zone must be \`.id.thatako.net\`, e.g. \`domains/yourname.id.thatako.net.json\``)
+    if (/[A-Z]/.test(file))
+        hints.push(`filename must be all lowercase`)
+    if (file.includes('..') || file.includes('/./'))
+        hints.push(`path traversal detected`)
+
+    return hints.length > 0 ? ` (hint: ${hints.join('; ')})` : ''
 }
 
 // main
@@ -127,16 +163,22 @@ function isOwnerBase(file, authorId, baseSha) {
 
     if (otherFiles.length > 0) {
         allLabels.push('reason: unauthorized')
-        allReasons.push(`pr modifies files outside domains/: ${otherFiles.map(f => f.file).join(', ')}`)
+        for (const f of otherFiles) {
+            const hint = getFilenameHint(f.file)
+            allReasons.push(`invalid file path: \`${f.file}\`${hint}`)
+        }
         needsMaintainer = true
     }
 
-    for (const { status, file } of domainFiles) {
+    for (const { status, file, renamed, oldFile } of domainFiles) {
+        // surface rename, visible in review
+        if (renamed) allReasons.push(`warning \`${file}\`: file was renamed from \`${oldFile}\`, make sure the \`domain\` field inside matches the new filename`)
+
         if (status === 'D') {
             const { isOwner } = isOwnerBase(file, authorId, BASE_SHA)
             if (!isOwner) {
                 allLabels.push('reason: unauthorized')
-                allReasons.push(`@${PR_AUTHOR} is not owner of ${file}; cannot delete`)
+                allReasons.push(`@${PR_AUTHOR} is not owner of \`${file}\`; cannot delete`)
                 needsMaintainer = true
             }
             continue
@@ -146,14 +188,15 @@ function isOwnerBase(file, authorId, baseSha) {
         try { data = JSON.parse(readFileSync(file, 'utf8')) }
         catch (e) {
             allLabels.push('reason: invalid file')
-            allReasons.push(`${file}: json parse failed - ${e.message}`)
+            allReasons.push(`\`${file}\`: json parse failed, ${e.message}`)
+            needsMaintainer = true
             continue
         }
 
         const isOwner = Array.isArray(data.owner) && data.owner.some(o => Number(o['github-id']) === authorId && o.github === PR_AUTHOR)
         if (!isOwner) {
             allLabels.push('reason: unauthorized')
-            allReasons.push(`@${PR_AUTHOR} (id:${authorId}) not listed as owner in ${file}`)
+            allReasons.push(`@${PR_AUTHOR} (id:${authorId}) not listed as owner in \`${file}\` - make sure your \`github\` username and \`github-id\` are correct`)
             needsMaintainer = true
             continue
         }
@@ -162,7 +205,7 @@ function isOwnerBase(file, authorId, baseSha) {
             const { isOwner: wasOwner } = isOwnerBase(file, authorId, BASE_SHA)
             if (!wasOwner) {
                 allLabels.push('reason: impersonation')
-                allReasons.push(`@${PR_AUTHOR} added themselves as owner in ${file}; self-auth not allowed`)
+                allReasons.push(`@${PR_AUTHOR} added themselves as owner in \`${file}\`, self-authorization on existing files is not allowed`)
                 needsMaintainer = true
                 continue
             }
@@ -174,10 +217,10 @@ function isOwnerBase(file, authorId, baseSha) {
                 const match = err.match(/reason: ([\w\s:]+)/)
                 if (match) allLabels.push(match[1].trim())
             }
-            allReasons.push(`${file}: ${errors.join('; ')}`)
+            allReasons.push(`\`${file}\`: ${errors.join('; ')}`)
             needsMaintainer = true
         }
-        for (const w of warnings) allReasons.push(`warning ${file}: ${w}`)
+        for (const w of warnings) allReasons.push(`warning \`${file}\`: ${w}`)
     }
 
     const uniqueLabels = [...new Set(allLabels)]
