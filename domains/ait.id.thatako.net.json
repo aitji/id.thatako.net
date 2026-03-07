@@ -11,7 +11,7 @@
   "records": {
     "CNAME": [
       {
-        "name": "ait.id",
+        "name": "@",
         "value": "44e3aec2e17afd7c.vercel-dns-017.com."
       }
     ]
