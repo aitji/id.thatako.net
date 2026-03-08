@@ -94,6 +94,25 @@ async function commitFileToMain(path, content, message, existingSha) {
     return r
 }
 
+// trigger commit.yml via workflow_dispatch
+async function triggerSyncWorkflow(changes) {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/commit.yml/dispatches`, {
+        method: 'POST',
+        headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
+        body: JSON.stringify({
+            ref: 'main',
+            inputs: { changes: JSON.stringify(changes) },
+        }),
+    })
+
+    // 204 = success, no body
+    if (res.status === 204) console.log('sync workflow dispatched ok')
+    else {
+        const r = await res.json()
+        console.error('dispatch err:', r.message)
+    }
+}
+
 function getChangedFiles() {
     const raw = execSync(`git diff --name-status ${BASE_SHA} ${HEAD_SHA}`, { encoding: 'utf8' })
     return raw.trim().split('\n').filter(Boolean).map(line => {
@@ -136,7 +155,7 @@ function getFilenameHint(file) {
     const hints = []
 
     if (!file.endsWith('.json'))
-        hints.push(`missing \`.json\` extension, it should be end with \`.json\``)
+        hints.push(`missing \`.json\` extension, it should end with \`.json\``)
     if (!file.startsWith('domains/'))
         hints.push(`file must be inside the \`domains/\` folder`)
     if (!file.includes('.id.thatako.net'))
@@ -217,7 +236,7 @@ function getFilenameHint(file) {
                 const match = err.match(/reason: ([\w\s:]+)/)
                 if (match) allLabels.push(match[1].trim())
             }
-            allReasons.push(`\`${file}\`: ${errors.join('; ')}`)
+            allReasons.push(`\`${file}\`:\n${errors.map(e => `  - ${e}`).join('\n')}`)
             needsMaintainer = true
         }
         for (const w of warnings) allReasons.push(`warning \`${file}\`: ${w}`)
@@ -246,6 +265,24 @@ function getFilenameHint(file) {
 
     // -- pass: commit each domain file to main; close pr --
     console.log(`pr valid; ${domainFiles.length} file(s) - committing to main`)
+
+    const syncChanges = []
+    for (const { status, file } of domainFiles) {
+        let action
+        if (status === 'A') action = 'create'
+        else if (status === 'M') action = 'update'
+        else if (status === 'D') action = 'delete'
+        else continue
+
+        let data = null
+        if (action !== 'delete') {
+            try { data = JSON.parse(readFileSync(file, 'utf8')) } catch { continue }
+        } else {
+            data = { domain: file.replace('domains/', '').replace('.json', '') }
+        }
+
+        syncChanges.push({ action, file, data })
+    }
 
     let commitFailed = false
     for (const { status, file } of domainFiles) {
@@ -284,6 +321,11 @@ function getFilenameHint(file) {
         await postComment(`## [❌] commit failed\n\nvalidation passed but commit to main failed. @aitji check action logs.`)
         process.exit(1)
         return
+    }
+
+    if (syncChanges.length > 0) {
+        try { await triggerSyncWorkflow(syncChanges) }
+        catch (e) { console.error('triggerSyncWorkflow threw:', e.message) }
     }
 
     try {

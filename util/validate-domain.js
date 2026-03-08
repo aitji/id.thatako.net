@@ -16,6 +16,69 @@ const HOSTNAME_RE = /^[a-z0-9][a-z0-9\-\.]{0,253}[a-z0-9]\.?$/i
 
 // record name: @ | single label (no dots blocks sub.sub.id | other.thatako.net)
 const RECORD_NAME_RE = /^(@|[a-z0-9_][a-z0-9_\-]{0,61}[a-z0-9_]?)$/i
+const ZONE_SUFFIXES = ['.id.thatako.net', '.id']
+
+function diagnoseRecordName(recName, domainFqdn) {
+  if (!recName.includes('.')) return { fixed: null, hint: '' }
+
+  const sub = domainFqdn.split('.')[0] // e.g. "ait".id.thatako.net
+  const fqdnStripped = domainFqdn.replace(/\.$/, '')
+  if (recName === fqdnStripped || recName === fqdnStripped + '.') {
+    return {
+      fixed: '@',
+      hint: `you pasted the full domain as the record name, use \`@\` for the root record`,
+    }
+  }
+
+  // sub.fqdn pasted: "www.ait.id.thatako.net"
+  if (recName.endsWith('.' + fqdnStripped) || recName.endsWith('.' + fqdnStripped + '.')) {
+    const label = recName.replace('.' + fqdnStripped, '').replace(/\.$/, '')
+    if (!label.includes('.')) {
+      return {
+        fixed: label,
+        hint: `use just \`${label}\`, the zone \`${fqdnStripped}\` is added automatically`,
+      }
+    }
+  }
+
+  // zone suffix: "ait.id" under "ait.id.thatako.net"
+  for (const suffix of ZONE_SUFFIXES) {
+    if (recName.endsWith(suffix)) {
+      const label = recName.slice(0, -suffix.length)
+      if (!label.includes('.') && label.length > 0) {
+        return {
+          fixed: label === sub ? '@' : label,
+          hint:
+            label === sub
+              ? `\`${recName}\` resolves to \`${recName}.${fqdnStripped}\` - you want the root record, use \`@\``
+              : `\`${recName}\` resolves to \`${recName}.${fqdnStripped}\` - strip the suffix, use \`${label}\``,
+        }
+      }
+    }
+  }
+
+  // generic dot warning, no safely guess just request edit
+  return {
+    fixed: null,
+    hint: `record name \`${recName}\` has dots, only \`@\` or a single label like \`www\` is allowed. dots cause double-zone issues e.g. \`${recName}.${fqdnStripped}\``,
+  }
+}
+
+function buildFixSnippet(data, type, badName, fixedName) {
+  const records = data.records?.[type]
+  if (!Array.isArray(records)) return null
+
+  const corrected = records.map(r => {
+    if (typeof r === 'object' && r !== null && (r.name || '@') === badName) {
+      const copy = { ...r, name: fixedName }
+      if (fixedName === '@') delete copy.name
+      return copy
+    }
+    return r
+  })
+
+  return '```json\n"' + type + '": ' + JSON.stringify(corrected, null, 2) + '\n```'
+}
 
 export function validateDomainFile(data, filename) {
   const errors = []
@@ -28,6 +91,8 @@ export function validateDomainFile(data, filename) {
   }
 
   // domain
+  const domainFqdn = typeof data.domain === 'string' ? data.domain.replace(/\.$/, '') : ''
+
   if (!data.domain || typeof data.domain !== 'string') {
     errors.push('reason: invalid file - missing domain field')
   } else {
@@ -93,6 +158,27 @@ export function validateDomainFile(data, filename) {
         if (DANGEROUS_RE.test(recName)) { errors.push(`reason: invalid records - dangerous content in ${type} name`); continue }
 
         // record name: @ or single label only no dots
+        if (recName.includes('.')) {
+          const { fixed, hint } = diagnoseRecordName(recName, domainFqdn)
+
+          let msg = `reason: invalid records - ${type} name \`${recName}\` has dots - only \`@\` or a single label is allowed\n\n`
+          msg += `  > ${hint}\n\n`
+          msg += `  the zone \`${domainFqdn}\` is appended automatically - dots in the name escape the zone.\n`
+          msg += `  e.g. name \`${recName}\` → resolves to \`${recName}.${domainFqdn}\` (wrong!)\n\n`
+
+          if (fixed !== null) {
+            const snippet = buildFixSnippet(data, type, recName, fixed)
+            msg += `  **fix:** change \`"name": "${recName}"\` → \`"name": "${fixed}"\`\n\n`
+            if (snippet) msg += snippet
+          } else {
+            msg += `  **fix:** use \`@\` for root or a single label like \`www\`, \`api\`, \`mail\``
+          }
+
+          errors.push(msg)
+          continue
+        }
+
+        // name regex after dot check
         if (!RECORD_NAME_RE.test(recName)) {
           errors.push(`reason: invalid records - ${type} name "${recName}" must be @ or single label (no dots)`)
         }
@@ -106,9 +192,8 @@ export function validateDomainFile(data, filename) {
 
         // block cname pointing to internal thatako.net zones (except id.thatako.net)
         if (type === 'CNAME' && /thatako\.net/i.test(content)) {
-          if (!/\.id\.thatako\.net\.?$/.test(content)) {
+          if (!/\.id\.thatako\.net\.?$/.test(content))
             errors.push(`reason: invalid records - cname target "${content}" points to internal thatako.net zone`)
-          }
         }
 
         if (type === 'CNAME' && DISALLOWED.some(d => content.includes(d + '.thatako.net')))
