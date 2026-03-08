@@ -1,0 +1,21 @@
+{
+  "domain": "juap.id.thatako.net",
+  "host": [
+    "vercel"
+  ],
+  "owner": [
+    {
+      "github": "pickerth-12",
+      "github-id": 131840709,
+      "email": "aitji@duck.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "0a8082110cc04770.vercel-dns-017.com."
+      }
+    ]
+  }
+}
