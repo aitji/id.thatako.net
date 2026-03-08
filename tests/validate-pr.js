@@ -13,23 +13,9 @@ const {
 } = process.env
 
 const authorId = Number(PR_AUTHOR_ID)
-// hoping i'm the only maintainer, so i don't need to touch this again ;p
-const MAINTAINER_ID = 100911929
-const MAINTAINER = 'aitji'
 
 // only domains/[sub].id.thatako.net.json - no traversal
 const VALID_FILE_RE = /^domains\/[a-z0-9][a-z0-9\-]{0,61}[a-z0-9]?\.id\.thatako\.net\.json$/
-
-// bot-managed labels, cleared on each re-run
-const REASON_LABELS = new Set([
-    'reason: unauthorized',
-    'reason: invalid file',
-    'reason: impersonation',
-    'reason: invalid records',
-    'reason: incomplete pr',
-    'pending: owner vote',
-    'maintainer-bypass',
-])
 
 // github utils
 async function ghPost(path, body) {
@@ -61,48 +47,6 @@ async function addLabels(labels) {
     const r = await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/labels`, { labels })
     if (r.message) console.error('addLabels err:', r.message)
     else console.log('labels:', labels.join(', '))
-}
-
-async function clearBotLabels() {
-    const current = await ghGet(`/repos/${REPO}/issues/${PR_NUMBER}/labels`)
-    if (!Array.isArray(current)) { console.error('clearBotLabels: unexpected response', current); return }
-    const toRemove = current.map(l => l.name).filter(n => REASON_LABELS.has(n))
-    await Promise.all(toRemove.map(async label => {
-        const res = await fetch(`https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/labels/${encodeURIComponent(label)}`, {
-            method: 'DELETE',
-            headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
-        })
-        if (res.status === 200 || res.status === 204) console.log('cleared label:', label)
-        else console.error('clearBotLabels err for', label, res.status)
-    }))
-}
-
-// rate limit
-async function checkRateLimit() {
-    if (authorId === MAINTAINER_ID) return { blocked: false, bypass: true }
-    const prs = await ghGet(`/repos/${REPO}/pulls?state=open&per_page=100`)
-    if (!Array.isArray(prs)) return { blocked: false }
-    const existing = prs.filter(p => Number(p.user.id) === authorId && String(p.number) !== String(PR_NUMBER))
-    if (existing.length > 0) return { blocked: true, prNumbers: existing.map(p => p.number) }
-    return { blocked: false }
-}
-
-// post or edit the vote comment; found by sentinel
-const VOTE_SENTINEL = '<!-- thatako-vote -->'
-async function upsertVoteComment(body) {
-    const comments = await ghGet(`/repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100`)
-    if (Array.isArray(comments)) {
-        const existing = comments.find(c => c.body && c.body.includes(VOTE_SENTINEL))
-        if (existing) {
-            await fetch(`https://api.github.com/repos/${REPO}/issues/comments/${existing.id}`, {
-                method: 'PATCH',
-                headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
-                body: JSON.stringify({ body }),
-            })
-            return
-        }
-    }
-    await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/comments`, { body })
 }
 
 async function requestReview(reviewers) {
@@ -209,26 +153,6 @@ function getFilenameHint(file) {
 
 // main
 ; (async () => {
-    await clearBotLabels()
-
-    // rate limit check
-    const rateLimit = await checkRateLimit()
-    if (rateLimit.blocked) {
-        await addLabels(['reason: unauthorized'])
-        await requestChanges(
-            `## [❌] rate limited\n\n` +
-            `@${PR_AUTHOR} you already have open pr(s): ${rateLimit.prNumbers.map(n => `#${n}`).join(', ')}\n\n` +
-            `please close your existing pr before opening a new one.`
-        )
-        process.exit(1)
-        return
-    }
-    if (rateLimit.bypass) {
-        // maintainer bypass - warn but continue
-        try { await addLabels(['maintainer-bypass']) } catch { }
-        try { await postComment(`> ⚠️ maintainer bypass: @${MAINTAINER} has multiple open prs, proceeding anyway`) } catch { }
-    }
-
     const changedFiles = getChangedFiles()
 
     // strict: only domains/*.id.thatako.net.json allowed; everything else = unauthorized
@@ -239,9 +163,6 @@ function getFilenameHint(file) {
     const allReasons = []
     let needsMaintainer = false
 
-    // collect impersonation
-    const impersonationTargets = {}
-
     if (otherFiles.length > 0) {
         allLabels.push('reason: unauthorized')
         for (const f of otherFiles) {
@@ -251,36 +172,16 @@ function getFilenameHint(file) {
         needsMaintainer = true
     }
 
-    // warn if pr touches files from multiple distinct owner sets
-    const ownerSets = []
-    for (const { file, status } of domainFiles) {
-        if (status === 'D') continue
-        try {
-            const data = JSON.parse(readFileSync(file, 'utf8'))
-            if (Array.isArray(data.owner)) ownerSets.push({ file, ids: data.owner.map(o => o['github-id']) })
-        } catch { }
-    }
-    if (ownerSets.length > 1) {
-        const allIds = ownerSets.map(s => s.ids.join(','))
-        const distinct = new Set(allIds)
-        if (distinct.size > 1) allReasons.push(`⚠️ warning: this pr touches files owned by different users - each file should be in its own pr`)
-    }
-
     for (const { status, file, renamed, oldFile } of domainFiles) {
+        // surface rename, visible in review
         if (renamed) allReasons.push(`warning \`${file}\`: file was renamed from \`${oldFile}\`, make sure the \`domain\` field inside matches the new filename`)
 
         if (status === 'D') {
             const { isOwner } = isOwnerBase(file, authorId, BASE_SHA)
             if (!isOwner) {
-                // is file has owners on base to trigger vote
-                const { existingData } = isOwnerBase(file, -1, BASE_SHA)
-                if (existingData && Array.isArray(existingData.owner) && existingData.owner.length > 0) {
-                    impersonationTargets[file] = { owners: existingData.owner, fileData: existingData }
-                } else {
-                    allLabels.push('reason: unauthorized')
-                    allReasons.push(`@${PR_AUTHOR} is not owner of \`${file}\`; cannot delete`)
-                    needsMaintainer = true
-                }
+                allLabels.push('reason: unauthorized')
+                allReasons.push(`@${PR_AUTHOR} is not owner of \`${file}\`; cannot delete`)
+                needsMaintainer = true
             }
             continue
         }
@@ -296,16 +197,9 @@ function getFilenameHint(file) {
 
         const isOwner = Array.isArray(data.owner) && data.owner.some(o => Number(o['github-id']) === authorId && o.github === PR_AUTHOR)
         if (!isOwner) {
-            // not listed as owner - trigger owner vote
-            const { existingData } = isOwnerBase(file, -1, BASE_SHA)
-            const owners = existingData?.owner || data.owner || []
-            if (Array.isArray(owners) && owners.length > 0) {
-                impersonationTargets[file] = { owners, fileData: existingData || data }
-            } else {
-                allLabels.push('reason: unauthorized')
-                allReasons.push(`@${PR_AUTHOR} (id:${authorId}) not listed as owner in \`${file}\` - make sure your \`github\` username and \`github-id\` are correct`)
-                needsMaintainer = true
-            }
+            allLabels.push('reason: unauthorized')
+            allReasons.push(`@${PR_AUTHOR} (id:${authorId}) not listed as owner in \`${file}\` - make sure your \`github\` username and \`github-id\` are correct`)
+            needsMaintainer = true
             continue
         }
 
@@ -331,47 +225,6 @@ function getFilenameHint(file) {
         for (const w of warnings) allReasons.push(`warning \`${file}\`: ${w}`)
     }
 
-    // -- owner vote required --
-    if (Object.keys(impersonationTargets).length > 0 && !needsMaintainer) {
-        console.log('impersonation detected - triggering owner vote')
-
-        // collect all unique real owners across affected files (excluding the pr author)
-        const ownerMap = {}
-        for (const { owners } of Object.values(impersonationTargets)) {
-            for (const o of owners) {
-                const id = Number(o['github-id'])
-                if (id !== authorId) ownerMap[id] = o.github
-            }
-        }
-        const ownerMentions = Object.values(ownerMap).map(u => `@${u}`)
-        const fileList = Object.keys(impersonationTargets).map(f => `\`${f}\``)
-        const expiresDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-        // embed owner ids in sentinel for vote-check.js to read - do not remove
-        const ownerData = JSON.stringify(Object.entries(ownerMap).map(([id, login]) => ({ id: Number(id), login })))
-
-        const voteBody =
-            `${VOTE_SENTINEL}\n` +
-            `<!-- owner-data:${Buffer.from(ownerData).toString('base64')} -->\n` +
-            `<!-- pr-author:${PR_AUTHOR} -->\n\n` +
-            `## [⚠️] unauthorized edit - owner approval required\n\n` +
-            `@${PR_AUTHOR} is not listed as an owner of the following file(s):\n` +
-            `${fileList.map(f => `- ${f}`).join('\n')}\n\n` +
-            `${ownerMentions.join(', ')} - your domain file(s) were edited by @${PR_AUTHOR}. do you approve this change?\n\n` +
-            `**reply with one of:**\n` +
-            `- \`yes\` - approve & merge the change\n` +
-            `- \`no\` - reject & close this pr\n\n` +
-            `> only verified owners (by github id) can vote. this pr will auto-close on **${expiresDate}** if no response.`
-
-        try { await addLabels(['pending: owner vote']) } catch (e) { console.error('addLabels threw:', e.message) }
-        try { await requestReview([MAINTAINER]) } catch (e) { console.error('requestReview threw:', e.message) }
-        try { await requestChanges(`awaiting owner vote - see comment below`) } catch (e) { console.error('requestChanges threw:', e.message) }
-        try { await upsertVoteComment(voteBody) } catch (e) { console.error('upsertVoteComment threw:', e.message) }
-
-        process.exit(1)
-        return
-    }
-
     const uniqueLabels = [...new Set(allLabels)]
 
     // -- failed --
@@ -379,13 +232,13 @@ function getFilenameHint(file) {
         console.log('pr failed:', allReasons)
 
         try { if (uniqueLabels.length > 0) await addLabels(uniqueLabels) } catch (e) { console.error('addLabels threw:', e.message) }
-        try { await requestReview([MAINTAINER]) } catch (e) { console.error('requestReview threw:', e.message) }
+        try { await requestReview(['aitji']) } catch (e) { console.error('requestReview threw:', e.message) }
         try {
             await requestChanges(
                 `## [❌] automated validation failed\n\n` +
                 `**labels:** ${uniqueLabels.map(l => `\`${l}\``).join(', ')}\n\n` +
                 `**issues:**\n${allReasons.map(r => `- ${r}`).join('\n')}\n\n` +
-                `assigned @${MAINTAINER} for manual review.`
+                `assigned @aitji for manual review.`
             )
         } catch (e) { console.error('requestChanges threw:', e.message) }
 
