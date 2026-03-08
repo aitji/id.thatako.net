@@ -43,6 +43,27 @@ async function ghGet(path) {
     return res.json()
 }
 
+async function ghDelete(path) {
+    const res = await fetch(`https://api.github.com${path}`, {
+        method: 'DELETE',
+        headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
+    })
+    if (res.status !== 204) return res.json()
+    return null
+}
+
+async function clearStaleReasonLabels() {
+    const existing = await ghGet(`/repos/${REPO}/issues/${PR_NUMBER}/labels`)
+    if (!Array.isArray(existing)) { console.error('clearStaleReasonLabels: unexpected response', existing); return }
+    const stale = existing.filter(l => l.name.startsWith('reason:')).map(l => l.name)
+    for (const label of stale) {
+        const encoded = encodeURIComponent(label)
+        const r = await ghDelete(`/repos/${REPO}/issues/${PR_NUMBER}/labels/${encoded}`)
+        if (r) console.error('removeLabel err:', r.message ?? r)
+        else console.log('removed stale label:', label)
+    }
+}
+
 async function addLabels(labels) {
     const r = await ghPost(`/repos/${REPO}/issues/${PR_NUMBER}/labels`, { labels })
     if (r.message) console.error('addLabels err:', r.message)
@@ -226,6 +247,9 @@ function getFilenameHint(file) {
     }
 
     const uniqueLabels = [...new Set(allLabels)]
+
+    // always wipe stale reason: labels before applying new ones
+    try { await clearStaleReasonLabels() } catch (e) { console.error('clearStaleReasonLabels threw:', e.message) }
 
     // -- failed --
     if (needsMaintainer) {
