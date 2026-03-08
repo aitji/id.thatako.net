@@ -37,13 +37,11 @@ jobs:
           REPO: ${{ github.repository }}
         run: node tests/validate-pr.js
 
-      - name: Auto-commit fixes if needed
-        if: steps.validate.outputs.auto_fix == 'true'
-        run: |
-          git config user.name  "thatako-bot"
-          git config user.email "bot@thatako.net"
-          git add domains/
-          git diff --cached --quiet || git commit -m "fix: auto-correct domain file [bot]"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Sync to Cloudflare
+        if: steps.validate.outputs.sync_changes != ''
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+          CF_CHANGES: ${{ steps.validate.outputs.sync_changes }}
+        run: node util/sync-cloudflare.js

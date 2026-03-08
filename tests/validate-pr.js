@@ -94,24 +94,7 @@ async function commitFileToMain(path, content, message, existingSha) {
     return r
 }
 
-// trigger commit.yml via workflow_dispatch
-async function triggerSyncWorkflow(changes) {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/commit.yml/dispatches`, {
-        method: 'POST',
-        headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' },
-        body: JSON.stringify({
-            ref: 'main',
-            inputs: { changes: JSON.stringify(changes) },
-        }),
-    })
 
-    // 204 = success, no body
-    if (res.status === 204) console.log('sync workflow dispatched ok')
-    else {
-        const r = await res.json()
-        console.error('dispatch err:', r.message)
-    }
-}
 
 function getChangedFiles() {
     const raw = execSync(`git diff --name-status ${BASE_SHA} ${HEAD_SHA}`, { encoding: 'utf8' })
@@ -324,8 +307,12 @@ function getFilenameHint(file) {
     }
 
     if (syncChanges.length > 0) {
-        try { await triggerSyncWorkflow(syncChanges) }
-        catch (e) { console.error('triggerSyncWorkflow threw:', e.message) }
+        const output = process.env.GITHUB_OUTPUT
+        if (output) {
+            const { appendFileSync } = await import('fs')
+            appendFileSync(output, `sync_changes=${JSON.stringify(syncChanges)}\n`)
+            console.log('sync_changes written to output:', syncChanges.length, 'change(s)')
+        }
     }
 
     try {
