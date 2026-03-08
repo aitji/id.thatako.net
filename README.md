@@ -13,12 +13,16 @@
     - [แก้ไขผ่าน GitHub โดยตรง (ขั้นสูง)](#แก้ไขผ่าน-github-โดยตรง-ขั้นสูง)
   - [โครงสร้างไฟล์](#โครงสร้างไฟล์)
   - [DNS Record Format](#dns-record-format)
-    - [ตัวอย่าง CNAME (GitHub Pages)](#ตัวอย่าง-cname-github-pages)
-    - [ตัวอย่าง A + TXT (Cloudflare/Custom Server)](#ตัวอย่าง-a--txt-cloudflarecustom-server)
-    - [ตัวอย่าง AAAA (IPv6)](#ตัวอย่าง-aaaa-ipv6)
-    - [ตัวอย่าง MX (email)](#ตัวอย่าง-mx-email)
-    - [หลาย records บนชื่อเดียวกัน](#หลาย-records-บนชื่อเดียวกัน)
-    - [CNAME Conflict Rule](#cname-conflict-rule)
+  - [ตัวอย่างตาม Provider](#ตัวอย่างตาม-provider)
+    - [Vercel](#vercel)
+    - [Netlify](#netlify)
+    - [GitHub Pages](#github-pages)
+    - [Custom Server (A Record)](#custom-server-a-record)
+    - [IPv6 (AAAA)](#ipv6-aaaa)
+    - [Email (MX)](#email-mx)
+  - [หลาย records บนชื่อเดียวกัน](#หลาย-records-บนชื่อเดียวกัน)
+  - [CNAME Conflict Rule](#cname-conflict-rule)
+  - [ข้อควรระวังเรื่อง record name](#ข้อควรระวังเรื่อง-record-name)
   - [GitHub Actions Validation](#github-actions-validation)
     - [สิ่งที่ตรวจสอบ](#สิ่งที่ตรวจสอบ)
     - [กรณีที่ maintainer ต้อง review เอง](#กรณีที่-maintainer-ต้อง-review-เอง)
@@ -32,14 +36,14 @@
 
 ### ลงทะเบียนผ่านหน้าเว็บ (แนะนำ)
 
-ไม่ต้องแตะ GitHub repository เลยทำทุกอย่างผ่านหน้าเว็บได้เลย
+ไม่ต้องแตะ GitHub repository เลย ทำทุกอย่างผ่านหน้าเว็บได้เลย
 
-1. เข้า [thatako.net/subdomain/register](thatako.net/subdomain/register)
+1. เข้า [thatako.net/subdomain/register](https://thatako.net/subdomain/register)
 2. เข้าสู่ระบบด้วยบัญชี GitHub _(ใช้แค่ยืนยันตัวตน)_
 3. ระบุชื่อ subdomain และเพิ่ม DNS records ตาม provider ที่ใช้
 4. กด _"ลงทะเบียนโดเมน"_ ระบบจะ deploy DNS เข้า Cloudflare ทันที
 
-> การ**แก้ไข**และ**ลบ**ก็ทำได้ผ่านหน้าเดียวกัน โดย owner และ co-owner สามารถเข้าจัดการโดเมนที่เป็นเจ้าของได้
+> การ**แก้ไข**และ**ลบ**ก็ทำได้ผ่านหน้าเดียวกัน โดย owner และ co-owner สามารถเข้าจัดการโดเมนที่ตัวเองเป็นเจ้าของได้
 
 ### แก้ไขผ่าน GitHub โดยตรง (ขั้นสูง)
 
@@ -49,14 +53,15 @@
 > [!WARNING]
 > แนะนำให้ใช้หน้าเว็บแทน วิธีนี้เหมาะสำหรับผู้ที่คุ้นเคยกับ git workflow เท่านั้น
 
-1. Fork repository นี้
-   ```
+1. Fork repository นี้แล้ว clone ลงเครื่อง
+   ```bash
    git clone https://github.com/aitji/id.thatako.net.git
    ```
-2. สร้างหรือแก้ไขไฟล์ที่ `domains/[your-name].json` ตาม format ด้านล่าง
+2. สร้างไฟล์ที่ `domains/[myname].id.thatako.net.json` ตาม format ด้านล่าง
 3. เปิด Pull Request พร้อมระบุชื่อ subdomain ใน title เช่น `เพิ่ม: myname.id.thatako.net`
-4. GitHub Actions จะตรวจสอบ ownership และ JSON format อัตโนมัติ
-5. ถ้าไม่มี error, bot จะปิด PR, commit และ deploy ให้เอง, ถ้ามี error ต้องแก้ไขก่อนแล้วบอทจะตรวจสอบให้อีกรอบ
+4. GitHub Actions จะตรวจสอบ ownership & JSON format อัตโนมัติ
+5. ถ้าผ่าน bot จะ commit เข้า main, deploy DNS, แล้วปิด PR ให้เอง
+   ถ้าไม่ผ่าน bot จะ request changes พร้อมระบุสาเหตุ แก้ไขแล้ว push ใหม่ได้เลย
 
 ## โครงสร้างไฟล์
 
@@ -64,66 +69,132 @@
 id.thatako.net/
 ├── domains/
 │   ├── myname.id.thatako.net.json    ← ไฟล์ subdomain แต่ละโดเมน
-│   ├── portfolio.json
+│   ├── portfolio.id.thatako.net.json
 │   └── ...
 └── README.md
 ```
 
-ไฟล์แต่ละ subdomain เก็บอยู่ใน `domains/[name].id.thatako.net.json` โดย `name` ต้องตรงกับชื่อ subdomain ที่ต้องการ
+ไฟล์แต่ละ subdomain เก็บอยู่ที่ `domains/[name].id.thatako.net.json`
+โดย `name` ต้องตรงกับชื่อ subdomain ที่ต้องการ และต้องตรงกับ field `domain` ในไฟล์ด้วย
 
 ## DNS Record Format
 
 ไฟล์ JSON มี schema ดังนี้
 
-> ตัวอย่างไฟล์จาก `domains/aitji.id.thatako.net`
-
 ```jsonc
 {
-  "domain": "aitji.id.thatako.net",
-  "host": ["vercel"],
+  "domain": "myname.id.thatako.net", // ชื่อ subdomain เต็ม
+  "host": ["vercel"], // provider ที่ใช้
   "owner": [
-    // primary owner คือคนแรกมีอีเมลติดต่อและมีคนเดียว
     {
-      "github": "aitji",
-      "github-id": 100911929,
-      "email": "ait.suriya@gmail.com" // สำคัญ*
+      // primary owner - คนแรก, มีอีเมลติดต่อ
+      "github": "username",
+      "github-id": 12345678, // หา id ได้ที่ api.github.com/users/<username>
+      "email": "username@example.com",
     },
-    // co-owners
-    {
-      "github": "PickerTH-12",
-      "github-id": 131840709,
-      "email": "" // co-owners ไม่จำเป็นต้องมีอีเมล
-    },
-    {
-      // สามารถมี co-owners กี่คนก็ได้
-      "github": "t4nluxz7-bot",
-      "github-id": 236544355,
-      "email": ""
-    } //, {...} เพิ่ม co-owners ได้
+    // co-owners เพิ่มได้ไม่จำกัด, ไม่ต้องมี email
+    // { "github": "...", "github-id": ..., "email": "" }
   ],
   "records": {
-    // ตัวอย่าง records สำหรับ vercel
-    "CNAME": [
-      {
-        "name": "aitji.id",
-        "value": "0a8082110cc04770.vercel-dns-017.com."
-      }
-    ]
-  }
+    // DNS records แยกตาม type ดูตัวอย่างแต่ละ provider ด้านล่าง
+  },
 }
 ```
 
-| Field               | Type     | Description                                      |
-| ------------------- | -------- | ------------------------------------------------ |
-| `domain`            | string   | ชื่อ subdomain เต็ม เช่น `myname.id.thatako.net` |
-| `host`              | string[] | provider ที่ใช้ เช่น `["vercel"]`                |
-| `owner`             | object[] | รายชื่อ owner ; คนแรกคือ primary owner           |
-| `owner[].github`    | string   | GitHub username                                  |
-| `owner[].github-id` | number   | GitHub user ID (ตัวเลข)                          |
-| `owner[].email`     | string   | Email (optional)                                 |
-| `records`           | object   | DNS records แยกตาม type                          |
+| Field               | Type     | Description                                                        |
+| ------------------- | -------- | ------------------------------------------------------------------ |
+| `domain`            | string   | ชื่อ subdomain เต็ม เช่น `myname.id.thatako.net`                   |
+| `host`              | string[] | provider ที่ใช้ เช่น `["vercel"]`                                  |
+| `owner`             | object[] | รายชื่อ owner คนแรกคือ primary owner                               |
+| `owner[].github`    | string   | GitHub username                                                    |
+| `owner[].github-id` | number   | GitHub user ID (ตัวเลข) หาได้จาก `api.github.com/users/<username>` |
+| `owner[].email`     | string   | Email ติดต่อ (optional สำหรับ co-owner)                            |
+| `records`           | object   | DNS records แยกตาม type                                            |
 
-### ตัวอย่าง CNAME (GitHub Pages)
+> **หา GitHub ID:** เปิด `https://api.github.com/users/<username>` แล้วดูค่า `"id"`
+
+## ตัวอย่างตาม Provider
+
+### Vercel
+
+Vercel ใช้ CNAME ชี้ไปที่ค่า `vercel-dns` ที่ได้จาก dashboard
+
+**วิธีหาค่า CNAME จาก Vercel:**
+
+1. เข้า Vercel dashboard → Project → Settings → Domains
+2. กด Add → พิมพ์ `myname.id.thatako.net`
+3. Vercel จะแสดงค่า CNAME ให้ เช่น `xxxxxxxxxxxxxxxx.vercel-dns-017.com.`
+
+```jsonc
+{
+  "domain": "myname.id.thatako.net",
+  "host": ["vercel"],
+  "owner": [
+    {
+      "github": "username",
+      "github-id": 12345678,
+      "email": "username@example.com",
+    },
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "xxxxxxxxxxxxxxxx.vercel-dns-017.com.", // ค่าจาก Vercel dashboard (ต้องมี . ท้าย)
+      },
+    ],
+  },
+}
+```
+
+> [!TIP]
+> ค่า CNAME ของแต่ละ project ไม่เหมือนกัน, ห้ามลอกจากตัวอย่างนี้
+> ต้องเอาค่าจาก Vercel dashboard ของตัวเองเท่านั้น
+
+### Netlify
+
+Netlify ใช้ CNAME ชี้ไปที่ `<site-name>.netlify.app`
+
+**วิธีหาค่า CNAME จาก Netlify:**
+
+1. เข้า Netlify dashboard → Site → Domain management → Add custom domain
+2. พิมพ์ `myname.id.thatako.net`
+3. Netlify จะแสดง CNAME target ให้, ปกติคือ `<site-name>.netlify.app`
+
+```jsonc
+{
+  "domain": "myname.id.thatako.net",
+  "host": ["netlify"],
+  "owner": [
+    {
+      "github": "username",
+      "github-id": 12345678,
+      "email": "username@example.com",
+    },
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "your-site-name.netlify.app.", // ชื่อ site ใน Netlify (ต้องมี . ท้าย)
+      },
+    ],
+  },
+}
+```
+
+> [!TIP]
+> ชื่อ site ใน Netlify มักเป็น random เช่น `brave-curie-12345.netlify.app`, เช็คได้ที่ Site settings → General → Site details
+
+### GitHub Pages
+
+GitHub Pages ใช้ CNAME ชี้ไปที่ `<username>.github.io`
+
+**วิธี setup:**
+
+1. เปิด repository ที่จะ deploy → Settings → Pages → Custom domain
+2. พิมพ์ `myname.id.thatako.net` แล้ว Save
+3. GitHub จะสร้างไฟล์ `CNAME` ใน repository ให้อัตโนมัติอย่าลบไฟล์นี้
 
 ```jsonc
 {
@@ -133,136 +204,134 @@ id.thatako.net/
     {
       "github": "username",
       "github-id": 12345678,
-      "email": "username@example.com"
-    } //, {...} เพิ่ม co-owners ได้
+      "email": "username@example.com",
+    },
   ],
   "records": {
     "CNAME": [
       {
         "name": "@",
-        "value": "username.github.io" // ลิงก์ที่ github ให้มาปกติแล้วจะเป็น [username].github.io
-      }
-    ]
-  }
+        "value": "username.github.io.", // GitHub username ของเจ้าของ repository (ต้องมี . ท้าย)
+      },
+    ],
+  },
 }
 ```
 
-> หลังจาก merge แล้วต้องไปเพิ่มโดเมนใน Repository → Settings → Pages ด้วย
+> [!TIP]
+> ถ้า deploy จาก repository ชื่อ `username/project` ไม่ใช่ `username/username.github.io`
+> ค่า CNAME ยังคงเป็น `username.github.io.` เหมือนเดิม, ไม่ต้องใส่ชื่อ repo
 
-### ตัวอย่าง A + TXT (Cloudflare/Custom Server)
+> [!WARNING]
+> หลัง DNS propagate แล้ว ต้องกลับไปที่ Settings → Pages แล้วเปิด **Enforce HTTPS** ด้วย
+> ถ้า GitHub ยังไม่ออก certificate ให้รอสักครู่แล้วลอง remove & re-add domain
+
+### Custom Server (A Record)
+
+ใช้เมื่อ deploy บนเซิร์ฟเวอร์ของตัวเอง มี IP address แน่นอน
 
 ```jsonc
 {
   "domain": "myname.id.thatako.net",
-  "host": ["cloudflare"],
+  "host": ["custom"],
   "owner": [
     {
       "github": "username",
       "github-id": 12345678,
-      "email": "username@example.com"
-    } //, {...} เพิ่ม co-owners ได้
+      "email": "username@example.com",
+    },
   ],
   "records": {
     "A": [
       {
         "name": "@",
-        "value": "1.2.3.4"
-        // *นี่เป็นเพียงตัวอย่างกรุณากรอกข้อมูลให้ถูกต้อง
-      }
+        "value": "1.2.3.4", // IP จริงของเซิร์ฟเวอร์
+      },
     ],
-    "TXT": [
-      {
-        "name": "@",
-        "value": "v=spf1 include:example.com ~all"
-        // *นี่เป็นเพียงตัวอย่างกรุณากรอกข้อมูลให้ถูกต้อง
-      }
-    ]
-  }
+  },
 }
 ```
 
-<hr>
+> [!TIP]
+> ถ้าต้องการ verification token เพิ่ม (เช่น Google Search Console) ใส่ TXT record เพิ่มได้เลยในไฟล์เดียวกัน
 
-### ตัวอย่าง AAAA (IPv6)
+### IPv6 (AAAA)
+
+ใช้คู่กับ A record หรือใช้เดี่ยวก็ได้ถ้าเซิร์ฟเวอร์รองรับ IPv6
 
 ```jsonc
 {
-  // ...ข้อมูลก่อนหน้า
+  // ...
   "records": {
     "AAAA": [
       {
         "name": "@",
-        "value": "2001:db8::1"
-        // *นี่เป็นเพียงตัวอย่างกรุณากรอกข้อมูลให้ถูกต้อง
-      }
-    ]
-  }
+        "value": "2001:db8::1", // IPv6 address ของเซิร์ฟเวอร์
+      },
+    ],
+  },
 }
 ```
 
-<hr>
+### Email (MX)
 
-### ตัวอย่าง MX (email)
+ใช้เมื่อต้องการรับอีเมลที่ `@myname.id.thatako.net`
 
 ```jsonc
 {
-  // ...ข้อมูลก่อนหน้า
+  // ...
   "records": {
     "MX": [
       {
         "name": "@",
-        "value": "mail.example.com"
-        // *นี่เป็นเพียงตัวอย่างกรุณากรอกข้อมูลให้ถูกต้อง
-      }
-    ]
-  }
+        "value": "mail.example.com.", // mail server hostname (ต้องมี . ท้าย)
+      },
+    ],
+  },
 }
 ```
 
-<hr>
+> [!CAUTION]
+> MX record ต้องไม่อยู่ร่วมกับ CNAME บน `@` เดียวกัน เลือกอย่างใดอย่างหนึ่ง
 
-### หลาย records บนชื่อเดียวกัน
+## หลาย records บนชื่อเดียวกัน
 
-สามารถใส่หลาย records ในชื่อเดียวกันได้ โดยเพิ่ม object เข้าไปใน array
+สามารถใส่หลาย records ในไฟล์เดียวกันได้ โดยเพิ่ม object เข้าไปใน array
 
 ```jsonc
 {
-  // ...ข้อมูลก่อนหน้า
+  // ...
   "records": {
     "A": [
       { "name": "@", "value": "1.2.3.4" },
-      { "name": "www", "value": "1.2.3.4" }
-      // *นี่เป็นเพียงตัวอย่างกรุณากรอกข้อมูลให้ถูกต้อง
+      { "name": "www", "value": "1.2.3.4" }, // sub-label เช่น www.myname.id.thatako.net
     ],
     "TXT": [
       {
         "name": "@",
-        "value": "some-verification-token"
-        // *นี่เป็นเพียงตัวอย่างกรุณากรอกข้อมูลให้ถูกต้อง
-      }
-    ]
-  }
+        "value": "v=spf1 include:example.com ~all",
+      },
+    ],
+  },
 }
 ```
 
-<hr>
-
-### CNAME Conflict Rule
+## CNAME Conflict Rule
 
 > [!CAUTION]
-> CNAME **ไม่สามารถ**อยู่ร่วมกับ ``A``, ``AAAA`` หรือ ``MX`` บนชื่อ (name) เดียวกันได้
-> ตามมาตรฐาน RFC 1912, GitHub Actions จะ fail validation ทันที
+> CNAME **ไม่สามารถ**อยู่ร่วมกับ `A`, `AAAA` หรือ `MX` บน name เดียวกันได้
+> ตามมาตรฐาน RFC 1912 ; GitHub Actions จะ fail validation ทันที
 
 ```jsonc
 // [ผิด ❌] CNAME และ A บน "@" เดียวกัน
 {
   "records": {
     "CNAME": [{ "name": "@", "value": "cname.example.com." }],
-    "A":     [{ "name": "@", "value": "1.2.3.4" }]
+    "A":     [{ "name": "@", "value": "1.2.3.4" }] // conflict!
   }
 }
 
-// [ถูก ✅] CNAME บน "@", A บน "www"
+// [ถูก ✅] แยก name ออกจากกัน
 {
   "records": {
     "CNAME": [{ "name": "www", "value": "cname.example.com." }],
@@ -271,30 +340,44 @@ id.thatako.net/
 }
 ```
 
-<hr>
+## ข้อควรระวังเรื่อง record name
+
+field `"name"` ใช้ได้แค่ **`@`** (root) หรือ **single label** (ไม่มีจุด) เท่านั้น
+zone `.id.thatako.net` จะถูกเติมต่อท้ายให้อัตโนมัติ
+
+| name ที่ใส่             | resolves เป็น                                 | ถูก/ผิด      |
+| ----------------------- | --------------------------------------------- | ------------ |
+| `@`                     | `myname.id.thatako.net`                       | ✅           |
+| `www`                   | `www.myname.id.thatako.net`                   | ✅           |
+| `api`                   | `api.myname.id.thatako.net`                   | ✅           |
+| `myname.id`             | `myname.id.myname.id.thatako.net`             | ❌ zone ซ้อน |
+| `myname.id.thatako.net` | `myname.id.thatako.net.myname.id.thatako.net` | ❌ zone ซ้อน |
+
+> [!WARNING]
+> ถ้า Vercel (หรือ provider อื่น) บอกให้ใส่ชื่อ record เป็น `myname.id` หรือ `myname.id.thatako.net`
+> ให้ใส่เป็น `@` แทน, เพราะ subdomain นี้คือ root ของ zone อยู่แล้ว
 
 ## GitHub Actions Validation
 
-เมื่อมี PR เข้ามา GitHub Actions จะตรวจสอบอัตโนมัติก่อน maintainer review
+เมื่อมี PR เข้ามา GitHub Actions จะตรวจสอบอัตโนมัติก่อน merge
 
 ### สิ่งที่ตรวจสอบ
 
-| การตรวจสอบ      | รายละเอียด                                                           |
-| --------------- | ------------------------------------------------------------------ |
-| JSON format     | ไฟล์ต้องเป็น valid JSON ตาม schema                                    |
-| ชื่อโดเมน         | ต้องตรงกับชื่อไฟล์ และลงท้ายด้วย ``.id.thatako.net` `                    |
-| ชื่อ subdomain    | ใช้ได้เฉพาะ ``a-z``, ``0-9``, ``-`` และห้ามขึ้นหรือลงท้ายด้วย ``-``        |
-| Reserved names  | ชื่อที่สงวนไว้จะไม่ผ่าน validation                                        |
-| Owner field     | ต้องมี ``github``, ``github-id`` ครบ                                 |
-| Ownership check | ผู้แก้ไขผ่าน GitHub ต้องเป็น owner หรือ co-owner ของโดเมนที่แก้ไข           |
-| CNAME conflict  | CNAME ต้องไม่อยู่ร่วมกับ A/AAAA/MX บนชื่อเดียวกัน                            |
+| การตรวจสอบ      | รายละเอียด                                                 |
+| --------------- | ---------------------------------------------------------- |
+| JSON format     | ไฟล์ต้องเป็น valid JSON ตาม schema                         |
+| ชื่อโดเมน       | ต้องตรงกับชื่อไฟล์ และลงท้ายด้วย `.id.thatako.net`         |
+| ชื่อ subdomain  | ใช้ได้เฉพาะ `a-z`, `0-9`, `-` - ห้ามขึ้นหรือลงท้ายด้วย `-` |
+| Reserved names  | ชื่อที่สงวนไว้จะไม่ผ่าน validation                         |
+| Owner field     | ต้องมี `github` & `github-id` ครบ                          |
+| Ownership check | ผู้แก้ไขต้องเป็น owner หรือ co-owner ของโดเมนนั้น          |
+| CNAME conflict  | CNAME ต้องไม่อยู่ร่วมกับ A/AAAA/MX บน name เดียวกัน        |
+| Record name     | name ต้องเป็น `@` หรือ single label - ไม่มีจุด             |
 
 ### กรณีที่ maintainer ต้อง review เอง
 
-- [x] ผู้แก้ไขผ่าน GitHub **ไม่ใช่** owner หรือ co-owner ของโดเมนที่แก้ไข
-    > ระบบจะ tag ``@aitji`` อัตโนมัติ
-- [x] มีการแก้ไขไฟล์นอก ``domains/`` directory
-- [ ] มีการแก้ไขหลาย ``domains``
+- [x] ผู้แก้ไขผ่าน GitHub **ไม่ใช่** owner หรือ co-owner ของโดเมนที่แก้ไข → ระบบ tag `@aitji` อัตโนมัติ
+- [x] มีการแก้ไขไฟล์นอก `domains/` directory
 
 ## ชื่อที่สงวนไว้ (Reserved Names)
 
@@ -306,13 +389,11 @@ dev, staging, test, beta, help, docs, support, abuse, tos,
 static, cdn, assets, img, media, ns, dns, demo, example
 ```
 
-หากต้องการชื่อที่ไม่อยู่ในรายการแต่อาจเกิด conflict กับระบบ ให้ติดต่อ maintainer ก่อน
+หากต้องการชื่อที่ไม่อยู่ในรายการแต่อาจ conflict กับระบบ ให้ติดต่อ maintainer ก่อน
 
 ## ข้อกำหนดการใช้งาน
 
 อ่านรายละเอียดเต็มได้ที่ [thatako.net/subdomain/tos](https://thatako.net/subdomain/tos)
-
-สรุปสั้น ๆ:
 
 - [x] ใช้สำหรับโปรเจกต์ส่วนตัว พอร์ตโฟลิโอ งานการเรียน
 - [x] ใช้งานได้จากที่ไหนก็ได้
@@ -327,20 +408,18 @@ static, cdn, assets, img, media, ns, dns, demo, example
 - GitHub Issues: [เปิด Abuse Report](https://github.com/aitji/id.thatako.net/issues/new?template=abuse.md)
 - Email: [aitji@duck.com](mailto:aitji@duck.com)
 
-
 ## Issue Templates
 
-| Template | ใช้เมื่อ |
-| -------- | ----- |
-| [รายงาน Abuse](https://github.com/aitji/id.thatako.net/issues/new?template=abuse.md) | พบ subdomain ที่ใช้งานไม่เหมาะสม                   |
-| [รายงานปัญหาระบบ](https://github.com/aitji/id.thatako.net/issues/new?template=bug.md) | หน้าเว็บ register, DNS ไม่ deploy, หรือระบบผิดปกติ |
-| [อุทธรณ์การระงับ](https://github.com/aitji/id.thatako.net/issues/new?template=appeal.md) | subdomain ถูกระงับโดยไม่มีเหตุผล |
-
+| Template                                                                                 | ใช้เมื่อ                                           |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [รายงาน Abuse](https://github.com/aitji/id.thatako.net/issues/new?template=abuse.md)     | พบ subdomain ที่ใช้งานไม่เหมาะสม                   |
+| [รายงานปัญหาระบบ](https://github.com/aitji/id.thatako.net/issues/new?template=bug.md)    | หน้าเว็บ register, DNS ไม่ deploy, หรือระบบผิดปกติ |
+| [อุทธรณ์การระงับ](https://github.com/aitji/id.thatako.net/issues/new?template=appeal.md) | subdomain ถูกระงับโดยไม่มีเหตุผล                   |
 
 ## ติดต่อ / Maintainer
 
 - GitHub: [aitji](https://github.com/aitji)
-- Email: [aitji@duck.com](mailto:aitji@duck.com) ``แนะนำ``
+- Email: [aitji@duck.com](mailto:aitji@duck.com) `แนะนำ`
 - Discord: [aitji](https://aitji.is-a.dev/discord)
 
 ```

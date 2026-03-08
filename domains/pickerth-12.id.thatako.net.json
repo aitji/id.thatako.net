@@ -12,7 +12,7 @@
   "records": {
     "CNAME": [
       {
-        "name": "juap.id",
+        "name": "@",
         "value": "0a8082110cc04770.vercel-dns-017.com."
       }
     ]
