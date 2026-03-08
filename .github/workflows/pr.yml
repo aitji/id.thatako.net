@@ -6,8 +6,15 @@ on:
     paths:
       - "domains/**"
 
+  issue_comment: # recheck on pr-comment
+    types: [created]
+
+  schedule:
+    - cron: "0 0 * * *" # daily (decay 14+ day)
+
 jobs:
   validate-pr:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -45,3 +52,89 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           CF_CHANGES: ${{ steps.validate.outputs.sync_changes }}
         run: node util/sync-cloudflare.js
+
+  vote-check:
+    # only run on pr comments (not issue comments)
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check vote
+        id: vote
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_AUTHOR_ID: ${{ github.event.comment.user.id }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: node tests/vote-check.js
+
+      - name: Sync to Cloudflare
+        if: steps.vote.outputs.sync_changes != ''
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+          CF_CHANGES: ${{ steps.vote.outputs.sync_changes }}
+        run: node util/sync-cloudflare.js
+
+  expire-votes:
+    # daily close pending ; 14 days+
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Close expired vote prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          node - << 'EOF'
+          const { GITHUB_TOKEN, REPO } = process.env
+          const headers = { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'User-Agent': 'thatako-pr-bot' }
+          async function ghGet(path) {
+            const r = await fetch(`https://api.github.com${path}`, { headers }); return r.json()
+          }
+          async function ghPatch(path, body) {
+            const r = await fetch(`https://api.github.com${path}`, { method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return r.json()
+          }
+          async function postComment(pr, body) {
+            await fetch(`https://api.github.com/repos/${REPO}/issues/${pr}/comments`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) })
+          }
+          ;(async () => {
+            const prs = await ghGet(`/repos/${REPO}/pulls?state=open&per_page=100`)
+            if (!Array.isArray(prs)) { console.log('no prs'); return }
+            const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000
+            for (const pr of prs) {
+              const labels = (pr.labels || []).map(l => l.name)
+              if (!labels.includes('pending: owner vote')) continue
+              const created = new Date(pr.created_at).getTime()
+              if (created > cutoff) continue
+              console.log(`expiring pr #${pr.number} - no owner response in 14 days`)
+              await postComment(pr.number, `## [⏱️] vote expired\n\nno owner response in 14 days. closing pr.`)
+              await ghPatch(`/repos/${REPO}/pulls/${pr.number}`, { state: 'closed' })
+            }
+          })().catch(e => { console.error(e); process.exit(1) })
+          EOF
