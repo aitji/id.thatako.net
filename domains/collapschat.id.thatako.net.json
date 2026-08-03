@@ -1,0 +1,21 @@
+{
+  "domain": "collapschat.id.thatako.net",
+  "host": [
+    "github-pages"
+  ],
+  "owner": [
+    {
+      "github": "maximgamemaxim",
+      "github-id": 225256954,
+      "email": "makcimgamemakcim@gmail.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "maximgamemaxim.github.io"
+      }
+    ]
+  }
+}
