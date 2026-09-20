@@ -1,0 +1,21 @@
+{
+  "domain": "soportecobranzapyme.id.thatako.net",
+  "host": [
+    "vercel"
+  ],
+  "owner": [
+    {
+      "github": "soportefacturaspyme",
+      "github-id": 316289151,
+      "email": "seguimientosdani@gmail.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "soportecobranzapyme .com."
+      }
+    ]
+  }
+}
