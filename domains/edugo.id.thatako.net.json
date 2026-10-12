@@ -1,0 +1,27 @@
+{
+  "domain": "edugo.id.thatako.net",
+  "host": [
+    "vercel"
+  ],
+  "owner": [
+    {
+      "github": "nathee56",
+      "github-id": 204211936,
+      "email": "raphiphat6987@gmail.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "c939fb70cd8081d6.vercel-dns-017.com."
+      }
+    ],
+    "TXT": [
+      {
+        "name": "_vercel",
+        "value": "vc-domain-verify=edugo.id.thatako.net,b53413a88c290df4cfc1"
+      }
+    ]
+  }
+}
