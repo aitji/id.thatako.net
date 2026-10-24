@@ -1,0 +1,21 @@
+{
+  "domain": "root-fr-13.id.thatako.net",
+  "host": [
+    "cloudflare"
+  ],
+  "owner": [
+    {
+      "github": "laser333",
+      "github-id": 129006700,
+      "email": "ghaf.amin@yahoo.com"
+    }
+  ],
+  "records": {
+    "A": [
+      {
+        "name": "@",
+        "value": "206.245.166.98"
+      }
+    ]
+  }
+}
