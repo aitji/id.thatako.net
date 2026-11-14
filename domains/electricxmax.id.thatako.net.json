@@ -1,0 +1,21 @@
+{
+  "domain": "electricxmax.id.thatako.net",
+  "host": [
+    "other"
+  ],
+  "owner": [
+    {
+      "github": "learningapi",
+      "github-id": 355559887,
+      "email": "dallascowboys92621@gmail.com"
+    }
+  ],
+  "records": {
+    "A": [
+      {
+        "name": "@",
+        "value": "15.204.59.55"
+      }
+    ]
+  }
+}
