@@ -1,0 +1,21 @@
+{
+  "domain": "jarl.id.thatako.net",
+  "host": [
+    "other"
+  ],
+  "owner": [
+    {
+      "github": "7JS7",
+      "github-id": 231871865,
+      "email": "https@gmx.es"
+    }
+  ],
+  "records": {
+    "A": [
+      {
+        "name": "@",
+        "value": "147.135.97.45"
+      }
+    ]
+  }
+}
