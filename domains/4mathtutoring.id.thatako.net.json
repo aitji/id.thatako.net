@@ -1,0 +1,21 @@
+{
+  "domain": "4mathtutoring.id.thatako.net",
+  "host": [
+    "other"
+  ],
+  "owner": [
+    {
+      "github": "learningapi",
+      "github-id": 355559887,
+      "email": "dallascowboys92621@gmail.com"
+    }
+  ],
+  "records": {
+    "CNAME": [
+      {
+        "name": "@",
+        "value": "4games.net"
+      }
+    ]
+  }
+}
